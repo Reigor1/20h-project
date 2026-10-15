@@ -20,7 +20,7 @@ func (h *UsersHTTPHandler) GetUsers(rw http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		responseHandler.ErrorResponse(
 			err,
-			"failed to get 'limit'/'offset' query param",
+			"failed to get limit/offset query param",
 		)
 
 		return

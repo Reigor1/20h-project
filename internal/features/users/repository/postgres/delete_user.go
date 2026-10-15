@@ -28,7 +28,11 @@ func (r *UsersRepository) DeleteUser(
 		return fmt.Errorf("exec query: %w", err)
 	}
 	if cmdTag.RowsAffected() == 0 {
-		return fmt.Errorf("user with id='%d': %w", id, core_errors.ErrNotFound)
+		return fmt.Errorf(
+			"user with id='%d': %w",
+			id,
+			core_errors.ErrNotFound,
+		)
 	}
 
 	return nil
