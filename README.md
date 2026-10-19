@@ -8,3 +8,5 @@ golang todoapp
 - limit и offset их проверка в на уровне сервиса, возможно стоит вынести в доменную область
 - накатить и использовать линтер
 - обсудить проблему дублирования кода type `TaskModel` tasks and statistics feature
+- Dockerfile разобрать как работает и что делает и как работать с CGO библиотеками
+- хардкод HTTP_ADDR в docker-compose.yaml это норм ?
