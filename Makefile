@@ -1,7 +1,7 @@
 include .env
 export
 
-export PROJECT_ROOT := $(shell cygpath -m "$(CURDIR)")
+export PROJECT_ROOT := $(CURDIR)
 
 env-up:
 	@docker compose up -d todoapp-postgres
@@ -68,6 +68,9 @@ todoapp-run:
 
 todoapp-deploy:
 	@docker compose up -d --build todoapp
+
+todoapp-undeploy:
+	@docker compose down todoapp
 
 ps: 
 	@docker compose ps
