@@ -16,7 +16,7 @@ func (s *UsersService) PatchUser(
 	if err != nil {
 		return domain.User{}, fmt.Errorf("get user: %w", err)
 	}
-	
+
 	if err := user.ApplyPatch(patch); err != nil {
 		return domain.User{}, fmt.Errorf("apply patch: %w", err)
 	}
@@ -25,6 +25,6 @@ func (s *UsersService) PatchUser(
 	if err != nil {
 		return domain.User{}, fmt.Errorf("patch user: %w", err)
 	}
-	
+
 	return patchedUser, nil
 }

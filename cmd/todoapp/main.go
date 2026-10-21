@@ -23,8 +23,16 @@ import (
 	users_service "github.com/Reigor1/20h-project/internal/features/users/service"
 	users_transport_http "github.com/Reigor1/20h-project/internal/features/users/transport/http"
 	"go.uber.org/zap"
+
+	_ "github.com/Reigor1/20h-project/docs"
 )
 
+// @Title 		 Golang Todo API
+// @Version 	 1.0
+// @Description  Todo Application REST-API scheme
+// @Description  `Перед работой помолитесь Богу машины`
+// @Host 		 127.0.0.1:5050
+// @BasePath 	 /api/v1
 func main() {
 	cfg := core_config.NewConfigMust()
 	time.Local = cfg.TimeZone
@@ -72,12 +80,13 @@ func main() {
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
 	statisticsRepository := statistics_postgres_repository.NewStatisticsRepository(pool)
 	statisticsService := statistics_service.NewStatisticsService(statisticsRepository)
-	statisticsTransportHTTP := statistics_transport_http.NewStatisticsHTTPHandler(statisticsService) 
+	statisticsTransportHTTP := statistics_transport_http.NewStatisticsHTTPHandler(statisticsService)
 
 	logger.Debug("initializing HTTP server")
 	httpServer := core_http_server.NewHTTPServer(
 		core_http_server.NewConfigMust(),
 		logger,
+		core_http_middleware.CORS(),
 		core_http_middleware.RequestID(),
 		core_http_middleware.Logger(logger),
 		core_http_middleware.Trace(),
@@ -99,6 +108,7 @@ func main() {
 		apiVersionRouter1,
 		// apiVersionRouter2,
 	)
+	httpServer.RegisterSwagger()
 
 	if err := httpServer.Run(ctx); err != nil {
 		logger.Error("HTTP server run error", zap.Error(err))
