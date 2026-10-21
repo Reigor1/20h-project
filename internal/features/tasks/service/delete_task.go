@@ -12,6 +12,6 @@ func (s *TasksService) DeleteTask(
 	if err := s.tasksRepository.DeleteTask(ctx, id); err != nil {
 		return fmt.Errorf("delete task from repository: %w", err)
 	}
-	
+
 	return nil
 }
