@@ -1,2 +1,24 @@
-.env
-out
+# Environment variables and secrets
+/.env
+/.env.*
+!/.env.example
+
+# Local runtime data
+/out/
+
+# Go build artifacts
+/bin/
+/dist/
+/todoapp
+/todoapp.exe
+*.test
+
+# Test coverage reports
+/coverage.out
+/coverage.html
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
