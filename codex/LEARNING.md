@@ -1,23 +1,33 @@
-LEARNING.md — Память и уроки проекта
-Этот файл помогает Codex учитывать подтверждённый опыт предыдущих сессий. Он относится только к текущему проекту.
-Правила ведения:
-Читать в начале работы над проектом (см. AGENTS.md).
-Добавлять выводы только после реально выполненной задачи, проверки или явной корректировки пользователя.
-Записывать кратко: контекст → правило/вывод → подтверждение.
-Избегать повторов, устаревших записей, паролей, токенов и персональных данных.
-Если урок перестал быть актуальным, исправить или удалить запись с пояснением причины.
-Если подтверждённых уроков ещё нет, оставлять этот файл почти пустым.
-Подтверждённые уроки
-Пока нет записей. Codex заполнит раздел после первых значимых задач.
+# LEARNING.md — Project Knowledge and Lessons
+
+This file helps Codex apply verified knowledge gained from previous sessions. It applies only to the current project.
+
+## Maintenance Rules
+
+- Read this file at the beginning of work on the project (see `AGENTS.md`).
+- Add lessons only after a task has actually been completed, a check has been performed, or the user has explicitly corrected a decision.
+- Keep entries concise: context → rule or lesson → evidence.
+- Avoid duplicates, outdated entries, passwords, tokens, and personal data.
+- If a lesson becomes outdated, update or remove it and explain why.
+- If no lessons have been verified yet, keep this file nearly empty.
+
+## Confirmed Lessons
+
+No entries yet. Codex will populate this section after the first significant tasks.
 
 <!--
-Формат записи (удали строку «Пока нет записей» при добавлении первого урока):
+Entry template (remove the "No entries yet" line when adding the first lesson):
 
-### YYYY-MM-DD — Короткое название
-- Контекст: что произошло и в какой части проекта.
-- Правило: как поступать в следующий раз.
-- Подтверждение: тест, исправление, принятое пользователем решение или конкретный файл.
-Непроверенные идеи
-Необязательный раздел. Такие заметки не являются обязательными инструкциями. Перед применением их нужно проверить.
-Устаревшие решения
-При необходимости отмечай решения, которые больше не действуют, и почему.
+### YYYY-MM-DD — Short title
+- Context: What happened and which part of the project was involved.
+- Rule: What to do next time.
+- Evidence: A test, fix, user-approved decision, or specific file.
+
+## Unverified Ideas
+
+Optional section. These notes are not mandatory instructions. Verify them before applying.
+
+## Deprecated Decisions
+
+If necessary, document decisions that are no longer valid and explain why.
+-->
