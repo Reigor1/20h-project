@@ -81,3 +81,14 @@ swagger-gen:
 		--parseDependency
 ps: 
 	@docker compose ps
+
+test-integration: 
+	@make test-integration-pgx
+
+test-integration-pgx:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		go test -count=1 -v -run '^TestPostgresPoolIntegration$$' ${PROJECT_ROOT}/tests/integration; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yml rm -sf postgres-test; \
+		exit $$test_status
