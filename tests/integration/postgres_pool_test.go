@@ -32,12 +32,14 @@ func TestPostgresPoolIntegration(t *testing.T) {
 		}
 	}()
 
-	if got, want := pool.OpTimeout(), 5*time.Second; got != want {
-		t.Errorf("OpTimeout() = %s, want %s", got, want)
+	const expectedOperationTimeout = 5 * time.Second
+	if got := pool.OpTimeout(); got != expectedOperationTimeout {
+		t.Errorf("OpTimeout() = %s, want %s", got, expectedOperationTimeout)
 	}
 
 	schemaName := fmt.Sprintf("pool_it_%d_%d", os.Getpid(), time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, "CREATE SCHEMA "+schemaName); err != nil {
+	createSchemaQuery := "CREATE SCHEMA " + schemaName
+	if _, err := pool.Exec(ctx, createSchemaQuery); err != nil {
 		t.Fatalf("create isolated test schema: %v", err)
 	}
 	schemaCreated := true
@@ -49,10 +51,13 @@ func TestPostgresPoolIntegration(t *testing.T) {
 
 	parentTable := schemaName + ".parents"
 	childTable := schemaName + ".children"
-	if _, err := pool.Exec(ctx, "CREATE TABLE "+parentTable+" (id integer PRIMARY KEY)"); err != nil {
+	createParentTableQuery := "CREATE TABLE " + parentTable + " (id integer PRIMARY KEY)"
+	if _, err := pool.Exec(ctx, createParentTableQuery); err != nil {
 		t.Fatalf("create parent table: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "CREATE TABLE "+childTable+" (parent_id integer REFERENCES "+parentTable+" (id))"); err != nil {
+	createChildTableQuery := "CREATE TABLE " + childTable +
+		" (parent_id integer REFERENCES " + parentTable + " (id))"
+	if _, err := pool.Exec(ctx, createChildTableQuery); err != nil {
 		t.Fatalf("create child table: %v", err)
 	}
 
@@ -60,11 +65,13 @@ func TestPostgresPoolIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert parent row: %v", err)
 	}
-	if got, want := commandTag.RowsAffected(), int64(1); got != want {
-		t.Fatalf("RowsAffected() = %d, want %d", got, want)
+	const expectedInsertedRows = int64(1)
+	if got := commandTag.RowsAffected(); got != expectedInsertedRows {
+		t.Fatalf("RowsAffected() = %d, want %d", got, expectedInsertedRows)
 	}
 
-	if _, err := pool.Exec(ctx, "INSERT INTO "+childTable+" (parent_id) VALUES (999)"); err == nil {
+	insertInvalidChildQuery := "INSERT INTO " + childTable + " (parent_id) VALUES (999)"
+	if _, err := pool.Exec(ctx, insertInvalidChildQuery); err == nil {
 		t.Fatal("Exec() foreign key violation error = nil, want an error")
 	}
 
@@ -91,14 +98,17 @@ func TestPostgresPoolIntegration(t *testing.T) {
 	}
 
 	var parentID int
-	if err := pool.QueryRow(ctx, "SELECT id FROM "+parentTable+" WHERE id = $1", 42).Scan(&parentID); err != nil {
+	existingParentQuery := "SELECT id FROM " + parentTable + " WHERE id = $1"
+	if err := pool.QueryRow(ctx, existingParentQuery, 42).Scan(&parentID); err != nil {
 		t.Fatalf("QueryRow() existing row error = %v, want nil", err)
 	}
 	if parentID != 42 {
 		t.Fatalf("QueryRow() id = %d, want 42", parentID)
 	}
 
-	if err := pool.QueryRow(ctx, "SELECT id FROM "+parentTable+" WHERE id = $1", 404).Scan(&parentID); !errors.Is(err, core_postgres_pool.ErrNoRows) {
+	missingParentQuery := "SELECT id FROM " + parentTable + " WHERE id = $1"
+	err = pool.QueryRow(ctx, missingParentQuery, 404).Scan(&parentID)
+	if !errors.Is(err, core_postgres_pool.ErrNoRows) {
 		t.Fatalf("QueryRow() missing row error = %v, want ErrNoRows", err)
 	}
 
@@ -159,8 +169,12 @@ func postgresTestConfig(t *testing.T) core_pgx_pool.Config {
 			t.Fatalf("%s must be set when PostgreSQL integration tests are enabled", key)
 		}
 	}
-	if applicationDatabase, exists := os.LookupEnv("POSTGRES_DB"); exists && applicationDatabase == values[databaseKey] {
-		t.Fatalf("%s must identify a database different from POSTGRES_DB", databaseKey)
+	applicationDatabase, applicationDatabaseSet := os.LookupEnv("POSTGRES_DB")
+	if applicationDatabaseSet && applicationDatabase == values[databaseKey] {
+		t.Fatalf(
+			"%s must identify a database different from POSTGRES_DB",
+			databaseKey,
+		)
 	}
 
 	port, exists := os.LookupEnv(portKey)
@@ -184,7 +198,8 @@ func dropTestSchema(t *testing.T, pool *core_pgx_pool.Pool, schemaName string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if _, err := pool.Exec(ctx, "DROP SCHEMA "+schemaName+" CASCADE"); err != nil {
+	dropSchemaQuery := "DROP SCHEMA " + schemaName + " CASCADE"
+	if _, err := pool.Exec(ctx, dropSchemaQuery); err != nil {
 		t.Errorf("drop isolated test schema: %v", err)
 	}
 }

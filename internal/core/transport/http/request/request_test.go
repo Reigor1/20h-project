@@ -22,36 +22,77 @@ func TestDecodeAndValidateRequest(t *testing.T) {
 		wantInvalidArgument bool
 		wantName            string
 	}{
-		{name: "valid JSON", body: `{"name":"Ada"}`, dest: &validatedRequest{}, wantName: "Ada"},
-		{name: "malformed JSON", body: `{"name":`, dest: &validatedRequest{}, wantErr: true, wantInvalidArgument: true},
-		{name: "empty body", body: "", dest: &validatedRequest{}, wantErr: true, wantInvalidArgument: true},
-		{name: "validate tag rejects missing name", body: `{}`, dest: &validatedRequest{}, wantErr: true, wantInvalidArgument: true},
+		{
+			name:     "valid JSON",
+			body:     `{"name":"Ada"}`,
+			dest:     &validatedRequest{},
+			wantName: "Ada",
+		},
+		{
+			name:                "malformed JSON",
+			body:                `{"name":`,
+			dest:                &validatedRequest{},
+			wantErr:             true,
+			wantInvalidArgument: true,
+		},
+		{
+			name:                "empty body",
+			body:                "",
+			dest:                &validatedRequest{},
+			wantErr:             true,
+			wantInvalidArgument: true,
+		},
+		{
+			name:                "validate tag rejects missing name",
+			body:                `{}`,
+			dest:                &validatedRequest{},
+			wantErr:             true,
+			wantInvalidArgument: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := DecodeAndValidateRequest(httptest.NewRequest("POST", "/", strings.NewReader(tc.body)), tc.dest)
+			request := httptest.NewRequest(
+				"POST",
+				"/",
+				strings.NewReader(tc.body),
+			)
+			err := DecodeAndValidateRequest(request, tc.dest)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("DecodeAndValidateRequest() error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if tc.wantInvalidArgument && !errors.Is(err, core_errors.ErrInvalidArgument) {
 				t.Fatalf("error = %v, want ErrInvalidArgument", err)
 			}
-			if err == nil && tc.wantName != "" && tc.dest.(*validatedRequest).Name != tc.wantName {
-				t.Fatalf("decoded name = %q, want %q", tc.dest.(*validatedRequest).Name, tc.wantName)
+			if err == nil && tc.wantName != "" {
+				gotName := tc.dest.(*validatedRequest).Name
+				if gotName != tc.wantName {
+					t.Fatalf("decoded name = %q, want %q", gotName, tc.wantName)
+				}
 			}
 		})
 	}
 
 	t.Run("valid validate tag is accepted", func(t *testing.T) {
 		var dest validatedRequest
-		if err := DecodeAndValidateRequest(httptest.NewRequest("POST", "/", strings.NewReader(`{"name":"Ada"}`)), &dest); err != nil {
+		request := httptest.NewRequest(
+			"POST",
+			"/",
+			strings.NewReader(`{"name":"Ada"}`),
+		)
+		if err := DecodeAndValidateRequest(request, &dest); err != nil {
 			t.Fatalf("DecodeAndValidateRequest() error = %v", err)
 		}
 	})
 	t.Run("custom validation error is wrapped", func(t *testing.T) {
 		called := false
 		dest := &customValidatable{called: &called}
-		err := DecodeAndValidateRequest(httptest.NewRequest("POST", "/", strings.NewReader(`{"name":"Ada"}`)), dest)
+		request := httptest.NewRequest(
+			"POST",
+			"/",
+			strings.NewReader(`{"name":"Ada"}`),
+		)
+		err := DecodeAndValidateRequest(request, dest)
 		if !called {
 			t.Fatal("custom Validate() was not called")
 		}
@@ -61,7 +102,12 @@ func TestDecodeAndValidateRequest(t *testing.T) {
 	})
 	t.Run("trailing second JSON value is currently accepted", func(t *testing.T) {
 		var dest validatedRequest
-		err := DecodeAndValidateRequest(httptest.NewRequest("POST", "/", strings.NewReader(`{"name":"Ada"} {"name":"Grace"}`)), &dest)
+		request := httptest.NewRequest(
+			"POST",
+			"/",
+			strings.NewReader(`{"name":"Ada"} {"name":"Grace"}`),
+		)
+		err := DecodeAndValidateRequest(request, &dest)
 		if err != nil || dest.Name != "Ada" {
 			t.Fatalf("current single-decode behavior: name=%q error=%v", dest.Name, err)
 		}
@@ -87,12 +133,40 @@ func TestGetIntPathValue(t *testing.T) {
 		want    int
 		wantErr bool
 	}{
-		{name: "positive integer", value: "42", set: true, want: 42},
-		{name: "negative integer", value: "-9", set: true, want: -9},
-		{name: "missing parameter", wantErr: true},
-		{name: "empty value", value: "", set: true, wantErr: true},
-		{name: "invalid string", value: "4x", set: true, wantErr: true},
-		{name: "integer overflow", value: tooLarge, set: true, wantErr: true},
+		{
+			name:  "positive integer",
+			value: "42",
+			set:   true,
+			want:  42,
+		},
+		{
+			name:  "negative integer",
+			value: "-9",
+			set:   true,
+			want:  -9,
+		},
+		{
+			name:    "missing parameter",
+			wantErr: true,
+		},
+		{
+			name:    "empty value",
+			value:   "",
+			set:     true,
+			wantErr: true,
+		},
+		{
+			name:    "invalid string",
+			value:   "4x",
+			set:     true,
+			wantErr: true,
+		},
+		{
+			name:    "integer overflow",
+			value:   tooLarge,
+			set:     true,
+			wantErr: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -102,7 +176,12 @@ func TestGetIntPathValue(t *testing.T) {
 			}
 			got, err := GetIntPathValue(r, "id")
 			if (err != nil) != tc.wantErr {
-				t.Fatalf("GetIntPathValue() = %d, %v; wantErr %v", got, err, tc.wantErr)
+				t.Fatalf(
+					"GetIntPathValue() = %d, %v; wantErr %v",
+					got,
+					err,
+					tc.wantErr,
+				)
 			}
 			if tc.wantErr {
 				if !errors.Is(err, core_errors.ErrInvalidArgument) {
@@ -125,16 +204,39 @@ func TestGetIntQueryParam(t *testing.T) {
 		want    *int
 		wantErr bool
 	}{
-		{name: "missing", query: ""},
-		{name: "empty", query: "?id="},
-		{name: "valid integer", query: "?id=17", want: intPointer(17)},
-		{name: "negative integer", query: "?id=-3", want: intPointer(-3)},
-		{name: "invalid integer", query: "?id=nope", wantErr: true},
-		{name: "overflow", query: "?id=" + overflow, wantErr: true},
+		{
+			name:  "missing",
+			query: "",
+		},
+		{
+			name:  "empty",
+			query: "?id=",
+		},
+		{
+			name:  "valid integer",
+			query: "?id=17",
+			want:  intPointer(17),
+		},
+		{
+			name:  "negative integer",
+			query: "?id=-3",
+			want:  intPointer(-3),
+		},
+		{
+			name:    "invalid integer",
+			query:   "?id=nope",
+			wantErr: true,
+		},
+		{
+			name:    "overflow",
+			query:   "?id=" + overflow,
+			wantErr: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := GetIntQueryParam(httptest.NewRequest("GET", "/"+tc.query, nil), "id")
+			request := httptest.NewRequest("GET", "/"+tc.query, nil)
+			got, err := GetIntQueryParam(request, "id")
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -161,15 +263,39 @@ func TestGetDateQueryParam(t *testing.T) {
 		want    *time.Time
 		wantErr bool
 	}{
-		{name: "missing", query: ""},
-		{name: "valid date", query: "?date=2026-10-24", want: datePointer(time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC))},
-		{name: "leap day", query: "?date=2024-02-29", want: datePointer(time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC))},
-		{name: "malformed date", query: "?date=24-10-2026", wantErr: true},
-		{name: "impossible calendar date", query: "?date=2026-02-30", wantErr: true},
+		{
+			name:  "missing",
+			query: "",
+		},
+		{
+			name:  "valid date",
+			query: "?date=2026-10-24",
+			want: datePointer(
+				time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC),
+			),
+		},
+		{
+			name:  "leap day",
+			query: "?date=2024-02-29",
+			want: datePointer(
+				time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC),
+			),
+		},
+		{
+			name:    "malformed date",
+			query:   "?date=24-10-2026",
+			wantErr: true,
+		},
+		{
+			name:    "impossible calendar date",
+			query:   "?date=2026-02-30",
+			wantErr: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := GetDateQueryParam(httptest.NewRequest("GET", "/"+tc.query, nil), "date")
+			request := httptest.NewRequest("GET", "/"+tc.query, nil)
+			got, err := GetDateQueryParam(request, "date")
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -189,5 +315,6 @@ func TestGetDateQueryParam(t *testing.T) {
 	}
 }
 
-func intPointer(value int) *int              { return &value }
+func intPointer(value int) *int { return &value }
+
 func datePointer(value time.Time) *time.Time { return &value }
