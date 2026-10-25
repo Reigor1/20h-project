@@ -18,7 +18,10 @@ func NewResponseWriter(w http.ResponseWriter) *ResponseWriter {
 
 func (rw *ResponseWriter) WriteHeader(statusCode int) {
 	rw.ResponseWriter.WriteHeader(statusCode)
-	rw.statusCode = statusCode
+
+	if rw.statusCode == StatusCodeUninitialized {
+		rw.statusCode = statusCode
+	}
 }
 
 func (rw *ResponseWriter) GetStatusCodeOrPanic() int {
