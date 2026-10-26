@@ -13,7 +13,7 @@ func TestNewResponseWriterStartsUninitialized(t *testing.T) {
 	if writer.statusCode != StatusCodeUninitialized {
 		t.Fatalf("initial status = %d, want %d", writer.statusCode, StatusCodeUninitialized)
 	}
-	if got := writer.GetStatusCodeOrPanic(); got != http.StatusOK {
+	if got := writer.GetStatusCode(); got != http.StatusOK {
 		t.Fatalf("GetStatusCodeOrPanic() = %d, want %d", got, http.StatusOK)
 	}
 }
@@ -24,7 +24,7 @@ func TestResponseWriterWriteHeaderStoresStatus(t *testing.T) {
 
 	writer.WriteHeader(http.StatusCreated)
 
-	if got := writer.GetStatusCodeOrPanic(); got != http.StatusCreated {
+	if got := writer.GetStatusCode(); got != http.StatusCreated {
 		t.Fatalf("wrapped status = %d, want %d", got, http.StatusCreated)
 	}
 	if response.Code != http.StatusCreated {
@@ -40,7 +40,7 @@ func TestResponseWriterWriteBodyUsesImplicitOKStatus(t *testing.T) {
 		t.Fatalf("Write() error = %v, want nil", err)
 	}
 
-	if got := writer.GetStatusCodeOrPanic(); got != http.StatusOK {
+	if got := writer.GetStatusCode(); got != http.StatusOK {
 		t.Errorf("wrapped status = %d, want %d", got, http.StatusOK)
 	}
 	if response.Code != http.StatusOK || response.Body.String() != "body" {
@@ -58,7 +58,7 @@ func TestResponseWriterRepeatedWriteHeaderKeepsHTTPFirstStatus(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("HTTP status = %d, want first status %d", response.Code, http.StatusCreated)
 	}
-	if got := writer.GetStatusCodeOrPanic(); got != response.Code {
+	if got := writer.GetStatusCode(); got != response.Code {
 		t.Errorf(
 			"wrapped status = %d, want it to match first HTTP status %d",
 			got,

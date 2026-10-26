@@ -2,7 +2,7 @@ package core_http_response
 
 import "net/http"
 
-var StatusCodeUninitialized = -1
+const StatusCodeUninitialized = -1
 
 type ResponseWriter struct {
 	http.ResponseWriter
@@ -24,9 +24,10 @@ func (rw *ResponseWriter) WriteHeader(statusCode int) {
 	}
 }
 
-func (rw *ResponseWriter) GetStatusCodeOrPanic() int {
+func (rw *ResponseWriter) GetStatusCode() int {
 	if rw.statusCode == StatusCodeUninitialized {
 		return http.StatusOK
 	}
+
 	return rw.statusCode
 }

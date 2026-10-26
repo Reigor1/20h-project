@@ -53,10 +53,6 @@ func main() {
 	logger.Debug("application time zone", zap.Any("zone", time.Local))
 
 	logger.Debug("initializing postgres connection pool")
-	// pool, err := core_postgres_pool.NewConnectionPool(
-	// 	ctx,
-	// 	core_postgres_pool.NewConfigMust(),
-	// )
 
 	pool, err := core_pgx_pool.NewPool(
 		ctx,
