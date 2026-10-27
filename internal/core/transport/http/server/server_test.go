@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/Reigor1/20h-project/docs"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
+	"github.com/Reigor1/20h-project/internal/testutil"
 	"go.uber.org/zap"
 )
 
@@ -45,7 +47,7 @@ func TestRegisterAPIRoutersStripsPrefixAndAppliesRouterMiddleware(t *testing.T) 
 	events := []string{}
 	router := NewAPIVersionRouter(
 		ApiVersion1,
-		recordRouterEvent(&events, "router"),
+		testutil.RecordMiddleware(&events, "router"),
 	)
 	router.RegisterRouts(Route{
 		Method: http.MethodGet,
@@ -68,7 +70,7 @@ func TestRegisterAPIRoutersStripsPrefixAndAppliesRouterMiddleware(t *testing.T) 
 		t.Fatalf("response = %d %q, want 200 /items/42:42", response.Code, response.Body.String())
 	}
 	wantEvents := []string{"router before", "handler", "router after"}
-	if !equalStringSlices(events, wantEvents) {
+	if !slices.Equal(events, wantEvents) {
 		t.Fatalf("router events = %v, want %v", events, wantEvents)
 	}
 }
@@ -147,16 +149,4 @@ func TestRegisterSwagger(t *testing.T) {
 	if got, want := strings.TrimSpace(response.Body.String()), strings.TrimSpace(docs.SwaggerInfo.ReadDoc()); got != want {
 		t.Fatal("served swagger document does not match SwaggerInfo.ReadDoc()")
 	}
-}
-
-func equalStringSlices(got, want []string) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for index := range got {
-		if got[index] != want[index] {
-			return false
-		}
-	}
-	return true
 }

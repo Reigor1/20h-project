@@ -9,8 +9,7 @@ import (
 	"testing"
 
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
-	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
-	"go.uber.org/zap"
+	"github.com/Reigor1/20h-project/internal/testutil"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -47,16 +46,14 @@ func TestJSONResponse(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			handler := NewHTTPResponseHandler(testResponseLogger(), response)
+			handler := NewHTTPResponseHandler(testutil.NewNopLogger(), response)
 
 			handler.JSONResponse(testCase.responseBody, http.StatusAccepted)
 
 			if response.Code != http.StatusAccepted {
 				t.Fatalf("status = %d, want %d", response.Code, http.StatusAccepted)
 			}
-			if contentType := response.Header().Get("Content-Type"); contentType != "application/json" {
-				t.Errorf("Content-Type = %q, want application/json", contentType)
-			}
+			testutil.AssertJSONContentType(t, response)
 			decoded, err := testCase.decode(response.Body.Bytes())
 			if err != nil {
 				t.Fatalf("decode JSON response: %v", err)
@@ -77,7 +74,7 @@ func TestJSONResponse(t *testing.T) {
 }
 
 func TestJSONResponseLogsEncodingError(t *testing.T) {
-	logger, logs := testObservedResponseLogger()
+	logger, logs := testutil.NewObservedLogger()
 	response := httptest.NewRecorder()
 	handler := NewHTTPResponseHandler(logger, response)
 
@@ -90,7 +87,7 @@ func TestJSONResponseLogsEncodingError(t *testing.T) {
 }
 
 func TestJSONResponseLogsWriterError(t *testing.T) {
-	logger, logs := testObservedResponseLogger()
+	logger, logs := testutil.NewObservedLogger()
 	writer := &errorResponseWriter{header: make(http.Header)}
 	handler := NewHTTPResponseHandler(logger, writer)
 
@@ -101,7 +98,7 @@ func TestJSONResponseLogsWriterError(t *testing.T) {
 
 func TestNoContentResponse(t *testing.T) {
 	response := httptest.NewRecorder()
-	handler := NewHTTPResponseHandler(testResponseLogger(), response)
+	handler := NewHTTPResponseHandler(testutil.NewNopLogger(), response)
 
 	handler.NoContentResponse()
 
@@ -156,7 +153,7 @@ func TestErrorResponse(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			const message = "request could not be completed"
-			logger, logs := testObservedResponseLogger()
+			logger, logs := testutil.NewObservedLogger()
 			response := httptest.NewRecorder()
 			handler := NewHTTPResponseHandler(logger, response)
 
@@ -182,7 +179,7 @@ func TestPanicResponse(t *testing.T) {
 		panicValue = "unexpected state"
 		message    = "An unexpected panic occurred."
 	)
-	logger, logs := testObservedResponseLogger()
+	logger, logs := testutil.NewObservedLogger()
 	response := httptest.NewRecorder()
 	handler := NewHTTPResponseHandler(logger, response)
 
@@ -200,15 +197,6 @@ func TestPanicResponse(t *testing.T) {
 		t.Fatalf("panic response = %+v, want error %q and message %q", body, wantError, message)
 	}
 	assertLoggedError(t, logs, message, zapcore.ErrorLevel, wantError)
-}
-
-func testResponseLogger() *core_logger.Logger {
-	return &core_logger.Logger{Logger: zap.NewNop()}
-}
-
-func testObservedResponseLogger() (*core_logger.Logger, *observer.ObservedLogs) {
-	core, logs := observer.New(zapcore.DebugLevel)
-	return &core_logger.Logger{Logger: zap.New(core)}, logs
 }
 
 func assertSingleResponseLog(t *testing.T, logs *observer.ObservedLogs, message string, wantLevel zapcore.Level) {

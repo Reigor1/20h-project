@@ -6,32 +6,31 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
+	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
 func TestRunServesRequestsAndShutsDownGracefully(t *testing.T) {
 	address := availableHTTPTestAddress(t)
 	events := []string{}
+	logger, _ := testutil.NewObservedLogger()
 	server := core_http_server.NewHTTPServer(
 		core_http_server.Config{
 			Addr:            address,
 			ShutdownTimeout: 2 * time.Second,
 		},
-		observedHTTPTestLogger(),
-		recordHTTPTestMiddleware(&events, "server"),
+		logger,
+		testutil.RecordMiddleware(&events, "server"),
 	)
 	router := core_http_server.NewAPIVersionRouter(
 		core_http_server.ApiVersion1,
-		recordHTTPTestMiddleware(&events, "router"),
+		testutil.RecordMiddleware(&events, "router"),
 	)
 	router.RegisterRouts(core_http_server.Route{
 		Method: http.MethodGet,
@@ -41,7 +40,7 @@ func TestRunServesRequestsAndShutsDownGracefully(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = io.WriteString(w, "ready")
 		},
-		Middleware: []core_http_middleware.Middleware{recordHTTPTestMiddleware(&events, "middleware")},
+		Middleware: []core_http_middleware.Middleware{testutil.RecordMiddleware(&events, "middleware")},
 	})
 	server.RegisterAPIRouters(router)
 
@@ -96,7 +95,7 @@ func TestRunServesRequestsAndShutsDownGracefully(t *testing.T) {
 		"router after",
 		"server after",
 	}
-	if !equalHTTPTestEvents(events, wantEvents) {
+	if !slices.Equal(events, wantEvents) {
 		t.Fatalf("middleware events = %v, want %v", events, wantEvents)
 	}
 
@@ -119,12 +118,13 @@ func TestRunReturnsListenError(t *testing.T) {
 	}
 	defer listener.Close()
 
+	logger, _ := testutil.NewObservedLogger()
 	server := core_http_server.NewHTTPServer(
 		core_http_server.Config{
 			Addr:            listener.Addr().String(),
 			ShutdownTimeout: time.Second,
 		},
-		observedHTTPTestLogger(),
+		logger,
 	)
 
 	err = server.Run(context.Background())
@@ -185,34 +185,4 @@ func isLoopbackPermissionError(err error) bool {
 	return strings.Contains(message, "access permissions") ||
 		strings.Contains(message, "operation not permitted") ||
 		strings.Contains(message, "permission denied")
-}
-
-func observedHTTPTestLogger() *core_logger.Logger {
-	core, _ := observer.New(zapcore.DebugLevel)
-	return &core_logger.Logger{Logger: zap.New(core)}
-}
-
-func recordHTTPTestMiddleware(
-	events *[]string,
-	name string,
-) core_http_middleware.Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			*events = append(*events, name+" before")
-			next.ServeHTTP(w, r)
-			*events = append(*events, name+" after")
-		})
-	}
-}
-
-func equalHTTPTestEvents(got, want []string) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for index := range got {
-		if got[index] != want[index] {
-			return false
-		}
-	}
-	return true
 }

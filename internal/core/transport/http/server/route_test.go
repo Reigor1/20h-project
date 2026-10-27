@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
+	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
 func TestRouteWithMiddleware(t *testing.T) {
@@ -23,8 +24,8 @@ func TestRouteWithMiddleware(t *testing.T) {
 			_, _ = w.Write([]byte("accepted"))
 		},
 		Middleware: []core_http_middleware.Middleware{
-			recordRouteEvent(&events, "first"),
-			recordRouteEvent(&events, "second"),
+			testutil.RecordMiddleware(&events, "first"),
+			testutil.RecordMiddleware(&events, "second"),
 		},
 	}
 
@@ -70,15 +71,5 @@ func TestRouteWithMiddlewareWithoutMiddleware(t *testing.T) {
 			response.Code,
 			response.Body.String(),
 		)
-	}
-}
-
-func recordRouteEvent(events *[]string, name string) core_http_middleware.Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			*events = append(*events, name+" before")
-			next.ServeHTTP(w, r)
-			*events = append(*events, name+" after")
-		})
 	}
 }

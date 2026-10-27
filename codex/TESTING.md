@@ -19,6 +19,18 @@ Before starting:
 - Follow actual business rules without inventing additional constraints.
 - Outline the main test scenarios before implementing them.
 Do not modify production code solely to make tests pass. If an implementation defect is discovered, separate its fix from the test-writing task and explain the reason.
+
+### Shared test utilities (required for every testing task)
+
+Before implementing new tests or modifying existing tests, even when the task is not about test utilities:
+
+1. Inspect `internal/testutil` for helpers that can be reused.
+2. Review relevant tests for duplicated helper functionality across packages.
+3. Reuse existing shared helpers instead of implementing equivalent logic again.
+4. Extract genuinely common helpers into `internal/testutil` when doing so improves reuse without obscuring tests.
+5. Keep helpers local when sharing them would add unnecessary abstraction, hide important setup, or couple unrelated tests.
+6. When extracting a helper, update its callers and verify that the affected tests still pass.
+
 3. Test Structure
 Use Go's standard testing package unless additional libraries are genuinely necessary.
 

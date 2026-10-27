@@ -14,6 +14,7 @@ import (
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
+	"github.com/Reigor1/20h-project/internal/testutil"
 	"go.uber.org/zap"
 )
 
@@ -127,7 +128,7 @@ func TestCreateUser(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusCreated)
 	}
-	assertJSONContentType(t, response)
+	testutil.AssertJSONContentType(t, response)
 	var responseBody UserDTOResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &responseBody); err != nil {
 		t.Fatalf("decode create response: %v", err)
@@ -215,7 +216,7 @@ func TestGetUser(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
-	assertJSONContentType(t, response)
+	testutil.AssertJSONContentType(t, response)
 	var responseBody UserDTOResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &responseBody); err != nil {
 		t.Fatalf("decode get user response: %v", err)
@@ -284,7 +285,7 @@ func TestGetUsers(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
-	assertJSONContentType(t, response)
+	testutil.AssertJSONContentType(t, response)
 	var responseBody []UserDTOResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &responseBody); err != nil {
 		t.Fatalf("decode get users response: %v", err)
@@ -382,7 +383,7 @@ func TestPatchUser(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
-	assertJSONContentType(t, response)
+	testutil.AssertJSONContentType(t, response)
 	var responseBody UserDTOResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &responseBody); err != nil {
 		t.Fatalf("decode patch user response: %v", err)
@@ -579,20 +580,12 @@ func assertErrorResponse(t *testing.T, response *httptest.ResponseRecorder, want
 	if response.Code != wantStatus {
 		t.Fatalf("status = %d, want %d; body = %q", response.Code, wantStatus, response.Body.String())
 	}
-	assertJSONContentType(t, response)
+	testutil.AssertJSONContentType(t, response)
 	var body core_http_response.ErrorResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode error response: %v; body = %q", err, response.Body.String())
 	}
 	if body.Error == "" || body.Message == "" {
 		t.Fatalf("error response = %+v, want error and message fields", body)
-	}
-}
-
-func assertJSONContentType(t *testing.T, response *httptest.ResponseRecorder) {
-	t.Helper()
-
-	if got := response.Header().Get("Content-Type"); got != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", got)
 	}
 }

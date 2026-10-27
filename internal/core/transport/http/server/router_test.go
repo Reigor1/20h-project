@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
+	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
 func TestAPIVersionRouterRegistersMethodsAndPaths(t *testing.T) {
@@ -66,7 +66,7 @@ func TestAPIVersionRouterMiddlewareAndVersions(t *testing.T) {
 	events := []string{}
 	versionOne := NewAPIVersionRouter(
 		ApiVersion1,
-		recordRouterEvent(&events, "router"),
+		testutil.RecordMiddleware(&events, "router"),
 	)
 	versionTwo := NewAPIVersionRouter(ApiVersion2)
 	versionOne.RegisterRouts(Route{
@@ -106,15 +106,5 @@ func TestAPIVersionRouterMiddlewareAndVersions(t *testing.T) {
 	)
 	if response.Body.String() != "v2" || !reflect.DeepEqual(events, []string{"v2 handler"}) {
 		t.Fatalf("v2 response body = %q, events = %v", response.Body.String(), events)
-	}
-}
-
-func recordRouterEvent(events *[]string, name string) core_http_middleware.Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			*events = append(*events, name+" before")
-			next.ServeHTTP(w, r)
-			*events = append(*events, name+" after")
-		})
 	}
 }

@@ -10,16 +10,9 @@ import (
 
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
+	"github.com/Reigor1/20h-project/internal/testutil"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 )
-
-func testLogger() (*core_logger.Logger, *observer.ObservedLogs) {
-	core, logs := observer.New(zapcore.DebugLevel)
-	return &core_logger.Logger{Logger: zap.New(core)}, logs
-}
 
 func TestChainMiddleware(t *testing.T) {
 	events := []string{}
@@ -201,7 +194,7 @@ func TestCORS(t *testing.T) {
 }
 
 func TestLoggerAddsRequestFieldsToContext(t *testing.T) {
-	logger, logs := testLogger()
+	logger, logs := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/items?limit=5", nil)
 	request.Header.Set(requestIDHeader, "request-123")
 	handler := ChainMiddleware(
@@ -222,7 +215,7 @@ func TestLoggerAddsRequestFieldsToContext(t *testing.T) {
 }
 
 func TestTraceLogsRequestLifecycle(t *testing.T) {
-	logger, logs := testLogger()
+	logger, logs := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/trace", nil)
 	request = request.WithContext(core_logger.ToContext(request.Context(), logger))
 	handler := ChainMiddleware(
@@ -249,7 +242,7 @@ func TestTraceLogsRequestLifecycle(t *testing.T) {
 }
 
 func TestTraceUsesImplicitOKStatus(t *testing.T) {
-	logger, logs := testLogger()
+	logger, logs := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request = request.WithContext(core_logger.ToContext(request.Context(), logger))
 	handler := ChainMiddleware(
@@ -264,7 +257,7 @@ func TestTraceUsesImplicitOKStatus(t *testing.T) {
 }
 
 func TestPanicMiddleware(t *testing.T) {
-	logger, _ := testLogger()
+	logger, _ := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request = request.WithContext(core_logger.ToContext(request.Context(), logger))
 	t.Run("normal request passes through", func(t *testing.T) {
@@ -304,7 +297,7 @@ func TestPanicMiddleware(t *testing.T) {
 }
 
 func TestDummyCallsNextBetweenLogs(t *testing.T) {
-	logger, logs := testLogger()
+	logger, logs := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request = request.WithContext(core_logger.ToContext(request.Context(), logger))
 	called := false

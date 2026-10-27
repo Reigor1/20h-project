@@ -1,9 +1,10 @@
 package core_http_server
 
 import (
-	"os"
 	"testing"
 	"time"
+
+	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
 func TestNewConfig(t *testing.T) {
@@ -49,7 +50,7 @@ func TestNewConfig(t *testing.T) {
 			t.Setenv("HTTP_ADDR", testCase.address)
 			t.Setenv("HTTP_SHUTDOWN_TIMEOUT", testCase.shutdownTimeout)
 			if testCase.unsetVariable != "" {
-				unsetHTTPEnvironmentVariable(t, testCase.unsetVariable)
+				testutil.UnsetEnvironmentVariable(t, testCase.unsetVariable)
 			}
 
 			config, err := NewConfig()
@@ -87,7 +88,7 @@ func TestNewConfigMust(t *testing.T) {
 	t.Run("panics on invalid configuration", func(t *testing.T) {
 		t.Setenv("HTTP_ADDR", "")
 		t.Setenv("HTTP_SHUTDOWN_TIMEOUT", "30s")
-		unsetHTTPEnvironmentVariable(t, "HTTP_ADDR")
+		testutil.UnsetEnvironmentVariable(t, "HTTP_ADDR")
 
 		defer func() {
 			if recovered := recover(); recovered == nil {
@@ -96,25 +97,5 @@ func TestNewConfigMust(t *testing.T) {
 		}()
 
 		NewConfigMust()
-	})
-}
-
-func unsetHTTPEnvironmentVariable(t *testing.T, key string) {
-	t.Helper()
-
-	previousValue, wasSet := os.LookupEnv(key)
-	if err := os.Unsetenv(key); err != nil {
-		t.Fatalf("unset %s: %v", key, err)
-	}
-	t.Cleanup(func() {
-		if wasSet {
-			if err := os.Setenv(key, previousValue); err != nil {
-				t.Errorf("restore %s: %v", key, err)
-			}
-			return
-		}
-		if err := os.Unsetenv(key); err != nil {
-			t.Errorf("restore unset %s: %v", key, err)
-		}
 	})
 }
