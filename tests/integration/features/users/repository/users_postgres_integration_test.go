@@ -11,10 +11,10 @@ import (
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
+	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
 	users_postgres_repository "github.com/Reigor1/20h-project/internal/features/users/repository/postgres"
 	"github.com/Reigor1/20h-project/internal/testutil"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestUsersRepositoryIntegration(t *testing.T) {
@@ -82,7 +82,6 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 				inputUser := domain.NewUserUninitialized(testCase.fullName, testCase.phoneNumber)
 
 				createdUser, err := repository.CreateUser(ctx, inputUser)
-
 				if err != nil {
 					t.Fatalf("CreateUser() error = %v, want nil", err)
 				}
@@ -138,9 +137,11 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 					if err == nil {
 						t.Fatal("CreateUser() error = nil, want database constraint error")
 					}
-					var postgresError *pgconn.PgError
-					if !errors.As(err, &postgresError) || postgresError.Code != "23514" {
-						t.Fatalf("CreateUser() error = %v, want PostgreSQL check-constraint violation", err)
+					if !errors.Is(err, core_postgres_pool.ErrUnknown) {
+						t.Fatalf("CreateUser() error = %v, want ErrUnknown from PostgreSQL adapter", err)
+					}
+					if !strings.Contains(err.Error(), "SQLSTATE 23514") {
+						t.Fatalf("CreateUser() error = %v, want PostgreSQL CHECK violation SQLSTATE 23514", err)
 					}
 					if usersAfterInsert := countUsers(t, ctx, pool); usersAfterInsert != usersBeforeInsert {
 						t.Fatalf(
@@ -175,7 +176,6 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 				storedUser := insertUser(t, ctx, pool, testCase.fullName, testCase.phoneNumber)
 
 				got, err := repository.GetUser(ctx, storedUser.ID)
-
 				if err != nil {
 					t.Fatalf("GetUser() error = %v, want nil", err)
 				}
@@ -199,21 +199,29 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 
 	t.Run("GetUsers", func(t *testing.T) {
 		t.Run("returns users ordered by ID with pagination and nullable fields", func(t *testing.T) {
-			offset := countUsers(t, ctx, pool)
+			initialCount := countUsers(t, ctx, pool)
 			phoneNumber := "+19876543210"
+
 			firstUser := insertUser(t, ctx, pool, "List first user", &phoneNumber)
 			secondUser := insertUser(t, ctx, pool, "List second user", nil)
 			thirdUser := insertUser(t, ctx, pool, "List third user", nil)
-			limit := 3
+
+			limit := 2
+			offset := initialCount + 1
 
 			got, err := repository.GetUsers(ctx, &limit, &offset)
-
 			if err != nil {
 				t.Fatalf("GetUsers() error = %v, want nil", err)
 			}
-			wantUsers := []domain.User{firstUser, secondUser, thirdUser}
+
+			wantUsers := []domain.User{secondUser, thirdUser}
 			if !reflect.DeepEqual(got, wantUsers) {
-				t.Fatalf("GetUsers() = %+v, want inserted users in ID order %+v", got, wantUsers)
+				t.Fatalf(
+					"GetUsers() = %+v, want %+v; first inserted user was %+v",
+					got,
+					wantUsers,
+					firstUser,
+				)
 			}
 		})
 
@@ -221,7 +229,6 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 			offset := countUsers(t, ctx, pool)
 
 			got, err := repository.GetUsers(ctx, nil, &offset)
-
 			if err != nil {
 				t.Fatalf("GetUsers() error = %v, want nil", err)
 			}
@@ -244,7 +251,6 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 			)
 
 			got, err := repository.PatchUser(ctx, storedUser.ID, updatedUser)
-
 			if err != nil {
 				t.Fatalf("PatchUser() error = %v, want nil", err)
 			}
@@ -268,7 +274,6 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 			)
 
 			got, err := repository.PatchUser(ctx, storedUser.ID, updatedUser)
-
 			if err != nil {
 				t.Fatalf("PatchUser() error = %v, want nil", err)
 			}
