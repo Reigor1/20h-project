@@ -83,12 +83,20 @@ ps:
 	@docker compose ps
 
 test-integration: 
-	@make test-integration-pgx
+	@$(MAKE) test-integration-pgx
+	@$(MAKE) test-integration-http
 
 test-integration-pgx:
 	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yml up -d --wait postgres-test
 	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
-		go test -count=1 -v -run '^TestPostgresPoolIntegration$$' ${PROJECT_ROOT}/tests/integration; \
+		go test -count=1 -v -run \
+			'^(TestPostgresPoolIntegration|TestNewPoolRejectsInvalidConfiguration)$$' \
+			${PROJECT_ROOT}/tests/integration/infrastructure; \
 		test_status=$$?; \
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yml rm -sf postgres-test; \
 		exit $$test_status
+
+test-integration-http:
+	@go test -count=1 -v -run \
+		'^TestRun(ServesRequestsAndShutsDownGracefully|ReturnsListenError)$$' \
+		${PROJECT_ROOT}/tests/integration/infrastructure
