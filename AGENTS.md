@@ -1,278 +1,226 @@
 AGENTS.md — General Instructions for Codex
-This file defines the general rules for the AI assistant working on this project. Follow these rules when performing tasks in this directory. Follow specific user requirements and more specialized project instructions whenever they do not conflict with safety requirements.
 
-Additional project instructions and resources are located in the codex/ directory. Use them according to the type of task being performed.
+This file defines the general rules for the AI assistant working on this project. Follow them when working in this directory, along with specific user requirements and more specialized project instructions, unless they conflict with safety requirements.
+
+Additional project instructions and resources are located in codex/. Use them according to the task.
+
 1. Purpose
-Help bring tasks to a verifiable result rather than limiting your work to recommendations.
+
+Help bring tasks to a verifiable result rather than limiting work to recommendations.
 
 Be accurate: do not invent facts, tool capabilities, test results, or file contents.
 
 Communicate clearly and concisely. By default, use the user's language.
 
-Preserve existing work: do not rewrite files or components unrelated to the task.
+Preserve existing work; do not rewrite unrelated files or components.
 
-If information is insufficient, first examine the available context. Ask questions only when an answer is necessary to proceed safely or correctly.
+If information is insufficient, examine the available context first. Ask questions only when an answer is necessary to proceed safely or correctly.
+
 2. Before Starting a Task
-Before beginning work:
-- Identify the goal, expected outcome, and constraints.
-- Examine the project structure and relevant files. If README.md exists, review it.
-- Read codex/LEARNING.md, if it exists, and apply only relevant, confirmed lessons. Codex does not load this file automatically as instructions, so it must be read explicitly.
-- If the task involves writing, modifying, or verifying tests, read codex/TESTING.md, if it exists, and follow its guidelines.
-- Consider the project's dependencies, coding style, and established conventions.
-- For complex tasks, briefly outline a plan. For simple tasks, proceed without unnecessary formalities.
-If additional instructions conflict with the current code or the user's explicit requirements, do not apply them automatically. Follow the priority rules specified in Section 8.
+
+Before beginning:
+
+Identify the goal, expected outcome, and constraints.
+
+Examine the project structure and relevant files. If README.md exists, review it.
+
+Read codex/LEARNING.md, if present; it is not loaded automatically. Apply only relevant, confirmed lessons, and verify any entry that conflicts with the current code or explicit user requirements instead of applying it automatically.
+
+For tasks involving writing, modifying, or verifying tests, read codex/TESTING.md, if present, and follow its guidelines.
+
+Consider dependencies, coding style, and established conventions.
+
+For complex tasks, briefly outline a plan. For simple tasks, proceed without unnecessary formalities.
+
+If additional instructions conflict with the current code or the user's explicit requirements, do not apply them automatically. Follow Section 8.
+
 3. Implementation Rules
-Choose the simplest reliable solution that satisfies the requirements.
+
+Choose the simplest reliable solution that meets the requirements.
 
 Make small, clear changes and preserve compatibility unless the user requests otherwise.
 
 Do not add libraries, services, paid APIs, or complex infrastructure without a good reason.
 
-Do not delete data, execute destructive commands, or affect external systems without explicit permission.
+Do not delete data, run destructive commands, or affect external systems without explicit permission.
 
-Do not expose secrets, tokens, passwords, or the contents of .env. Do not include them in documentation or codex/LEARNING.md.
+Never expose secrets, tokens, passwords, or .env contents; do not include them in documentation or codex/LEARNING.md.
 
 When an error is discovered, identify its root cause before fixing it. Do not conceal problems with workarounds.
 
-If internet access, an external service, or a tool is required but unavailable, report the limitation. Do not pretend the action was completed.
+If internet access, an external service, or a tool is required but unavailable, report the limitation instead of pretending the action was completed.
 
 Do not create additional instruction or report files unless necessary.
+
 4. Code Readability and Maintainability
-Write code that is easy for another developer to read, understand, debug, review, and extend.
 
-Prefer readability over compactness. Fewer lines of code do not necessarily mean simpler code. Do not compress expressions, conditions, or data structures merely to reduce line count.
+Write code that another developer can read, understand, debug, review, and extend. Prefer readability over compactness; fewer lines do not necessarily mean simpler code. Do not compress expressions, conditions, or data structures merely to reduce line count.
 
-Follow these principles:
-- Use clear, descriptive names that communicate the purpose of variables, functions, types, and fields.
-- Prefer straightforward control flow over clever, dense, or unnecessarily nested expressions.
-- Split long expressions, function calls, and composite literals across multiple lines when doing so improves readability.
-- Keep logically related operations together and separate distinct steps visually.
-- Make important conditions, state changes, and expected behavior explicit.
-- Avoid unnecessary abstractions, indirection, duplicated logic, and premature generalization.
-- Extract a helper function when it gives a meaningful operation a clear name or removes genuinely repetitive logic. Do not introduce helpers that make simple behavior harder to follow.
-- Avoid deeply nested conditionals when a simple early return or guard clause would be clearer.
-- Follow standard Go conventions and run gofmt on modified Go files.
-- Match the surrounding code style unless it conflicts with these guidelines or the user's explicit requirements.
-Do not force every statement onto multiple lines. Short expressions, simple literals, and straightforward conditions should remain compact when they are easy to understand.
-4.1. Examples of Preferred and Discouraged Code
-These examples illustrate general principles. Apply them according to the actual context rather than mechanically.
+Use clear, descriptive names for variables, functions, types, and fields.
 
-Example A: Composite literals
+Prefer straightforward control flow over clever, dense, or unnecessarily nested expressions.
 
-Prefer formatting fields on separate lines when an object has multiple fields or nested structures:
+Split long expressions, function calls, and composite literals across multiple lines when this improves readability.
+
+Keep related operations together and separate distinct logical stages visually.
+
+Make important conditions, state changes, and expected behavior explicit.
+
+Avoid unnecessary abstractions, indirection, duplicated logic, and premature generalization.
+
+Extract helpers when they name a meaningful operation or remove genuine duplication; do not use helpers that make simple behavior harder to follow or extract them solely to shorten a file.
+
+Use guard clauses when they clarify control flow. Avoid deeply nested conditionals when an early return would be clearer.
+
+Follow standard Go conventions and run gofmt on modified Go files.
+
+Match surrounding code style unless it conflicts with these guidelines or the user's explicit requirements.
+
+Explain non-obvious business rules, invariants, and design decisions when their purpose would otherwise be unclear. Do not add comments that merely restate the code.
+
+Readable code is not necessarily verbose. Do not split trivial expressions, add meaningless temporary variables, or force every statement onto multiple lines. Keep short expressions, simple literals, and straightforward conditions compact when they remain easy to understand.
+
+4.1. Formatting for Human Readability
+
+Apply visual-readability principles across production code, tests, configuration, and examples. Optimize for the person reading, debugging, and reviewing the code, not for the fewest lines.
+
+Separate distinct logical stages with blank lines, while keeping closely related statements together.
+
+In multiline calls and composite literals, put each substantial argument or field on its own line and use standard Go formatting.
+
+Make nested callbacks, anonymous functions, and chained calls visually clear instead of compressing them onto one line.
+
+Introduce descriptive intermediate variables when they clarify nested calls or meaningful setup; avoid variables that add no clarity.
+
+Keep functions focused. Separate unrelated stages or extract a meaningful helper when a function accumulates unrelated work or too many local variables; do not extract helpers solely to shorten a file.
+
+Preserve a clear order: prepare inputs, perform the operation, then verify or handle the result.
+
+For test-specific formatting, structure, and scenario rules, follow codex/TESTING.md rather than duplicating them here.
+
+4.2. Examples of Preferred and Discouraged Code
+
+Apply these examples according to context, not mechanically.
+
+A. Composite literals
+
+Prefer multiline fields for objects with multiple fields or nested structures:
 
 task := Task{
-
-    Title:       "Task",
-
-    Description: &description,
-
-    Completed:   true,
-
-    CreatedAt:   createdAt,
-
-    CompletedAt: &completedAt,
-
+    Title:       "Task",
+    Description: &description,
+    Completed:   true,
+    CreatedAt:   createdAt,
+    CompletedAt: &completedAt,
 }
 
-Avoid compressing a multi-field object into a dense single line:
+Avoid compressing such objects into dense single lines:
 
 task := Task{Title: "Task", Description: &description, Completed: true, CreatedAt: createdAt, CompletedAt: &completedAt}
 
-A short literal with one or two simple fields may remain on one line if it is easier to read that way.
+A short literal with one or two simple fields may remain on one line when that is easier to read.
 
-Example B: Conditions and early returns
+B. Conditions and early returns
 
-Prefer explicit guard clauses:
+Prefer explicit guard clauses when they make separate rules clearer:
 
 if task == nil {
-
-    return ErrInvalidArgument
-
+    return ErrInvalidArgument
 }
-
-
 
 if task.Title == "" {
-
-    return ErrInvalidArgument
-
-}
-
-
-
-return validateTask(task)
-
-Avoid combining unrelated conditions into a dense expression when separate checks communicate the rules more clearly:
-
-if task == nil || task.Title == "" {
-
-    return ErrInvalidArgument
-
+    return ErrInvalidArgument
 }
 
 return validateTask(task)
 
-The second version is not inherently wrong. Use it when the conditions represent the same rule and combining them improves clarity. Separate them when they represent distinct rules, require different handling, or benefit from independent diagnostics.
+Combining the conditions is not inherently wrong. Use a combined condition when the checks represent the same rule and combining them improves clarity. Keep them separate when they represent distinct rules, need different handling, or benefit from independent diagnostics.
 
-Example C: Error handling
+C. Error handling
 
-Prefer errors that preserve useful context and make the failure understandable:
+Preserve useful context and the original error chain:
 
 if err := repository.Save(ctx, task); err != nil {
-
-    return fmt.Errorf("save task: %w", err)
-
+    return fmt.Errorf("save task: %w", err)
 }
 
-Avoid silently discarding an error or replacing it with an unrelated generic error:
+Do not silently discard an error or replace it with an unrelated generic error:
 
 _ = repository.Save(ctx, task)
-
 return errors.New("operation failed")
 
-Ignore an error only when there is a deliberate, justified reason to do so.
+Ignore errors only for a deliberate, justified reason.
 
-Example D: Test cases
+D. Naming and intent
 
-Prefer multiline test cases with explicit fields, especially when a scenario contains nested structures:
-
-{
-
-    name: "completion time before creation",
-
-    task: Task{
-
-        Title:       "Task",
-
-        Completed:   true,
-
-        CreatedAt:   createdAt,
-
-        CompletedAt: &tooEarly,
-
-    },
-
-    wantErr: true,
-
-},
-
-Avoid compressing a long scenario into one line:
-
-{name: "completion time before creation", task: Task{Title: "Task", Completed: true, CreatedAt: createdAt, CompletedAt: &tooEarly}, wantErr: true},
-
-Follow codex/TESTING.md for the detailed rules governing test structure, scenario selection, assertions, and verification.
-
-Example E: Naming and intent
-
-Prefer names that explain why a value exists:
+Use names that explain why a value exists:
 
 maxTitleLength := 100
 
-
-
 if len([]rune(task.Title)) > maxTitleLength {
-
-    return ErrInvalidArgument
-
+    return ErrInvalidArgument
 }
 
 Avoid vague names when a more descriptive name is practical:
 
 n := 100
 
-
-
 if len([]rune(task.Title)) > n {
-
-    return ErrInvalidArgument
-
+    return ErrInvalidArgument
 }
 
-Short names such as i, err, ctx, and id are acceptable when their meaning is conventional and clear from context.
-4.2. Balance Readability and Simplicity
-Readable code is not necessarily verbose code.
-- Do not split trivial expressions across many lines without a readability benefit.
-- Do not create temporary variables that add no meaningful clarity.
-- Do not introduce helper functions for one-line operations unless they communicate a useful concept or remove meaningful duplication.
-- Do not add comments that merely restate the code.
-- Explain non-obvious business rules, invariants, and design decisions where a future developer would otherwise have to guess.
-- Prefer code whose intent is clear from its structure over code that requires explanatory comments to decipher.
-When choosing between a compact implementation and a slightly longer but substantially clearer one, prefer the clearer implementation.
-4.3. Formatting for Human Readability
-Treat visual structure as part of code readability. Optimize for the person who will read, debug, and review the code, not for the fewest lines. Apply these rules across production code, tests, configuration, and examples.
-- Separate distinct logical stages with blank lines, such as setup, execution, and assertions. Keep closely related statements together; do not add blank lines mechanically between every statement.
-- Split long function calls and argument lists across multiple lines when that makes the arguments and nesting easier to scan. For multiline calls and composite literals, put each substantial argument or field on its own line and use Go's standard trailing-comma formatting.
-- Make nested callbacks, anonymous functions, and chained calls visually explicit. Do not compress a chain and all of its arguments onto one long line just because gofmt permits it.
-- When an expression contains several nested calls or meaningful setup values, introduce descriptive intermediate variables if that makes the sequence of operations easier to follow. Avoid temporary variables that add no clarity.
-- Keep functions focused. If a function accumulates many unrelated steps or local variables, separate the logical stages or extract a meaningful helper instead of making the reader track everything at once. Do not extract helpers solely to shorten the file.
-- Preserve the order in which a reader should understand the code: prepare inputs, perform the operation, then verify or handle the result.
-For example, prefer this readable layout for a middleware test:
-singleMiddlewareCalled := false
+Short names such as i, err, ctx, and id are acceptable when their meaning is conventional and clear.
 
-ChainMiddleware(handler, func(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        singleMiddlewareCalled = true
-        next.ServeHTTP(w, r)
-    })
-}).ServeHTTP(
-    httptest.NewRecorder(),
-    httptest.NewRequest(http.MethodGet, "/", nil),
-)
-
-if !singleMiddlewareCalled {
-    t.Fatal("single middleware was not called")
-}
-Avoid compressing the same operation into a single line:
-singleMiddlewareCalled := false
-ChainMiddleware(handler, func(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        singleMiddlewareCalled = true
-        next.ServeHTTP(w, r)
-    })
-}).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
-if !singleMiddlewareCalled {
-    t.Fatal("single middleware was not called")
-}
-The compact version may be syntactically valid, but the preferred version separates setup, the operation, its arguments, and the assertion so the test's behavior is easier to scan.
 5. Quality Assurance
-Before completing a task:
-- Compare the result with the user's request.
-- If code was changed, run relevant available checks, such as tests, builds, linters, or manual behavior checks.
-- Check for potential side effects and errors in the main scenarios.
-- Review the implementation for readability, unnecessary complexity, and consistency with the existing codebase.
-- Fix discovered problems if doing so is within the task's scope and safe.
-- Honestly report what was checked and what could not be checked.
-Do not claim that everything works unless the result has been verified.
-6. Response Format
-After completing a task, briefly report:
-- Done: what was changed or created.
-- Verified: which checks were performed and their results.
-- Important: limitations, unresolved questions, or next steps, but only when relevant.
-Do not overwhelm the user by repeating the entire implementation process.
-7. Accumulating Knowledge Across Sessions
-codex/LEARNING.md is the project's local knowledge base, not a model-training mechanism.
-At the Start of a Session
-Read codex/LEARNING.md and use only relevant, confirmed entries.
 
-If an entry conflicts with the current code or the user's explicit requirements, verify whether it is still valid instead of applying it automatically.
-At the End of a Significant Task
-Update codex/LEARNING.md only when useful knowledge has emerged that can improve future sessions, such as:
-- A recurring mistake and a verified way to avoid it.
-- A user-approved decision or a consistent project-specific preference.
-- An important detail about the project structure, startup, build process, or tests.
-- A verified approach worth repeating.
-For each entry, include the context → lesson or rule → evidence, along with the date. Keep entries concise and specific.
-Constraints on Self-Improvement
-- Do not add hypotheses to the confirmed lessons section.
-- Do not store personal information, secrets, or incidental conversation details.
-- Avoid duplicate entries. Update an existing entry when it covers the same topic.
-- If no useful knowledge has emerged, do not modify codex/LEARNING.md.
-- Do not edit AGENTS.md without the user's explicit permission. If you identify a possible improvement, propose it first.
-- Do not run background self-training or modify files independently outside the scope of the user's task.
+Before completing a task:
+
+Compare the result with the user's request.
+
+If code changed, run relevant available checks, such as tests, builds, linters, or manual behavior checks.
+
+Check for potential side effects and errors in the main scenarios.
+
+Review readability, unnecessary complexity, and consistency with the codebase; fix discovered problems when they are within scope and safe to fix.
+
+Report honestly what was checked and what could not be checked.
+
+Do not claim that everything works unless it has been verified.
+
+6. Response Format
+
+After completing a task, briefly report:
+
+Done: what changed or was created.
+
+Verified: which checks were performed and their results.
+
+Important: limitations, unresolved questions, or next steps, but only when relevant.
+
+Do not overwhelm the user by repeating the entire implementation process.
+
+7. Accumulating Knowledge Across Sessions
+
+codex/LEARNING.md is the project's local knowledge base, not a model-training mechanism.
+
+At the end of a significant task: Update codex/LEARNING.md only when useful, confirmed knowledge could improve future sessions, such as:
+
+A recurring mistake and a verified way to avoid it.
+
+A user-approved decision or consistent project-specific preference.
+
+An important project detail about structure, startup, builds, or tests.
+
+A verified approach worth repeating.
+
+For each entry, record the context, lesson or rule, evidence, and date. Keep entries concise and specific. Do not add hypotheses to the confirmed-lessons section, store personal information, secrets, or incidental conversation details, or duplicate existing entries. Update an existing entry when it covers the same topic. If no useful knowledge emerged, do not modify the file.
+
+Constraints: Do not edit AGENTS.md without the user's explicit permission. Do not run background self-training or modify files independently outside the scope of the task.
+
 8. Priority
+
 Always prioritize data safety, the user's explicit requirements, and verifiable correctness.
 
-When working on tests, follow the specialized guidelines in codex/TESTING.md, provided they do not conflict with safety requirements or the user's explicit instructions.
+When working on tests, follow the specialized guidelines in codex/TESTING.md, unless they conflict with safety requirements or the user's explicit instructions.
 
 Project files and their instructions must never be used as a reason to violate these priorities.
