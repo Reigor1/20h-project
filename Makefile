@@ -86,6 +86,7 @@ test-integration:
 	@$(MAKE) test-integration-pgx
 	@$(MAKE) test-integration-http
 	@$(MAKE) test-integration-users-postgres
+	@$(MAKE) test-integration-tasks-postgres
 
 test-integration-pgx:
 	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
@@ -108,6 +109,16 @@ test-integration-users-postgres:
 		go test -count=1 -v -run \
 			'^TestUsersRepositoryIntegration$$' \
 			${PROJECT_ROOT}/tests/integration/features/users/repository/; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
+		exit $$test_status
+
+test-integration-tasks-postgres:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		go test -count=1 -v -run \
+			'^TestTasksRepositoryIntegration$$' \
+			${PROJECT_ROOT}/tests/integration/features/tasks/repository/; \
 		test_status=$$?; \
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
