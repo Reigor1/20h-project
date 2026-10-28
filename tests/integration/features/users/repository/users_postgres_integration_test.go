@@ -3,7 +3,6 @@ package repository_test
 import (
 	"context"
 	"errors"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -46,16 +45,7 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 		)
 	}
 
-	if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS todoapp"); err != nil {
-		t.Fatalf("prepare todoapp schema in test database: %v", err)
-	}
-	schemaSQL, err := os.ReadFile("testdata/users_schema.sql")
-	if err != nil {
-		t.Fatalf("read users test schema: %v", err)
-	}
-	if _, err := pool.Exec(ctx, string(schemaSQL)); err != nil {
-		t.Fatalf("prepare todoapp.users in test database: %v", err)
-	}
+	testutil.PreparePostgresSchema(t, ctx, pool, "testdata/users_schema.sql")
 
 	repository := users_postgres_repository.NewUsersRepository(pool)
 

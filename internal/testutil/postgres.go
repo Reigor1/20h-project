@@ -1,12 +1,37 @@
 package testutil
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
 
+	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
 )
+
+// PreparePostgresSchema creates the todoapp schema and executes a test schema SQL file.
+func PreparePostgresSchema(
+	t *testing.T,
+	ctx context.Context,
+	pool core_postgres_pool.Pool,
+	schemaPath string,
+) {
+	t.Helper()
+
+	if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS todoapp"); err != nil {
+		t.Fatalf("prepare todoapp schema in test database: %v", err)
+	}
+
+	schemaSQL, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatalf("read PostgreSQL test schema %q: %v", schemaPath, err)
+	}
+
+	if _, err := pool.Exec(ctx, string(schemaSQL)); err != nil {
+		t.Fatalf("execute PostgreSQL test schema %q: %v", schemaPath, err)
+	}
+}
 
 // PostgresTestConfig reads the isolated POSTGRES_TEST_* settings used by integration tests.
 func PostgresTestConfig(t *testing.T) core_pgx_pool.Config {

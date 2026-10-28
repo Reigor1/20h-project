@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +33,7 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 	ctx, cancelOperations := context.WithTimeout(context.Background(), time.Minute)
 	defer cancelOperations()
 	assertConnectedTestDatabase(t, ctx, pool, config.Database)
-	prepareTasksSchema(t, ctx, pool)
+	testutil.PreparePostgresSchema(t, ctx, pool, "testdata/tasks_schema.sql")
 	repository := tasks_postgres_repository.NewTasksRepository(pool)
 
 	t.Run("CreateTask", func(t *testing.T) {
@@ -501,21 +500,6 @@ func assertConnectedTestDatabase(
 	}
 	if connectedDatabase != wantDatabase {
 		t.Fatalf("connected database = %q, want configured test database %q", connectedDatabase, wantDatabase)
-	}
-}
-
-func prepareTasksSchema(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool) {
-	t.Helper()
-
-	if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS todoapp"); err != nil {
-		t.Fatalf("prepare todoapp schema in test database: %v", err)
-	}
-	schemaSQL, err := os.ReadFile("testdata/tasks_schema.sql")
-	if err != nil {
-		t.Fatalf("read tasks test schema: %v", err)
-	}
-	if _, err := pool.Exec(ctx, string(schemaSQL)); err != nil {
-		t.Fatalf("prepare todoapp task tables in test database: %v", err)
 	}
 }
 
