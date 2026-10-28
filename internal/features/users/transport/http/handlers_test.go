@@ -13,7 +13,6 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
-	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 	"github.com/Reigor1/20h-project/internal/testutil"
 	"go.uber.org/zap"
 )
@@ -176,7 +175,7 @@ func TestCreateUserRejectsInvalidRequest(t *testing.T) {
 
 			handler.CreateUser(response, request)
 
-			assertErrorResponse(t, response, http.StatusBadRequest)
+			testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 			if service.createUserCalls != 0 {
 				t.Fatalf("CreateUser() calls = %d, want 0 for invalid request", service.createUserCalls)
 			}
@@ -194,7 +193,7 @@ func TestCreateUserReturnsServiceError(t *testing.T) {
 
 	handler.CreateUser(response, request)
 
-	assertErrorResponse(t, response, http.StatusInternalServerError)
+	testutil.AssertErrorResponse(t, response, http.StatusInternalServerError)
 	if service.createUserCalls != 1 {
 		t.Fatalf("CreateUser() calls = %d, want 1", service.createUserCalls)
 	}
@@ -244,7 +243,7 @@ func TestGetUserRejectsInvalidID(t *testing.T) {
 
 	handler.GetUser(response, request)
 
-	assertErrorResponse(t, response, http.StatusBadRequest)
+	testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 	if service.getUserCalls != 0 {
 		t.Fatalf("GetUser() calls = %d, want 0 for invalid ID", service.getUserCalls)
 	}
@@ -261,7 +260,7 @@ func TestGetUserReturnsServiceError(t *testing.T) {
 
 	handler.GetUser(response, request)
 
-	assertErrorResponse(t, response, http.StatusNotFound)
+	testutil.AssertErrorResponse(t, response, http.StatusNotFound)
 	if service.getUserCalls != 1 || service.getUserID != 42 {
 		t.Fatalf("GetUser() calls/id = %d/%d, want 1/42", service.getUserCalls, service.getUserID)
 	}
@@ -341,7 +340,7 @@ func TestGetUsersInvalidPagination(t *testing.T) {
 
 			handler.GetUsers(response, newUserRequest(http.MethodGet, testCase.path, ""))
 
-			assertErrorResponse(t, response, http.StatusBadRequest)
+			testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 			if service.getUsersCalls != 0 {
 				t.Fatalf("GetUsers() calls = %d, want 0 for invalid pagination", service.getUsersCalls)
 			}
@@ -358,7 +357,7 @@ func TestGetUsersReturnsServiceError(t *testing.T) {
 
 	handler.GetUsers(response, newUserRequest(http.MethodGet, "/users", ""))
 
-	assertErrorResponse(t, response, http.StatusInternalServerError)
+	testutil.AssertErrorResponse(t, response, http.StatusInternalServerError)
 	if service.getUsersCalls != 1 {
 		t.Fatalf("GetUsers() calls = %d, want 1", service.getUsersCalls)
 	}
@@ -446,7 +445,7 @@ func TestPatchUserRejectsInvalidPathOrBody(t *testing.T) {
 
 			handler.PatchUser(response, request)
 
-			assertErrorResponse(t, response, testCase.wantStatus)
+			testutil.AssertErrorResponse(t, response, testCase.wantStatus)
 			if service.patchUserCalls != 0 {
 				t.Fatalf("PatchUser() calls = %d, want 0 for invalid request", service.patchUserCalls)
 			}
@@ -465,7 +464,7 @@ func TestPatchUserReturnsServiceError(t *testing.T) {
 
 	handler.PatchUser(response, request)
 
-	assertErrorResponse(t, response, http.StatusConflict)
+	testutil.AssertErrorResponse(t, response, http.StatusConflict)
 	if service.patchUserCalls != 1 || service.patchUserID != 42 {
 		t.Fatalf("PatchUser() calls/id = %d/%d, want 1/42", service.patchUserCalls, service.patchUserID)
 	}
@@ -502,7 +501,7 @@ func TestDeleteUserRejectsInvalidID(t *testing.T) {
 
 	handler.DeleteUser(response, request)
 
-	assertErrorResponse(t, response, http.StatusBadRequest)
+	testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 	if service.deleteUserCalls != 0 {
 		t.Fatalf("DeleteUser() calls = %d, want 0 for invalid ID", service.deleteUserCalls)
 	}
@@ -519,7 +518,7 @@ func TestDeleteUserReturnsServiceError(t *testing.T) {
 
 	handler.DeleteUser(response, request)
 
-	assertErrorResponse(t, response, http.StatusNotFound)
+	testutil.AssertErrorResponse(t, response, http.StatusNotFound)
 	if service.deleteUserCalls != 1 || service.deleteUserID != 42 {
 		t.Fatalf("DeleteUser() calls/id = %d/%d, want 1/42", service.deleteUserCalls, service.deleteUserID)
 	}
@@ -572,20 +571,4 @@ func newUserRequest(method, target, body string) *http.Request {
 	return request.WithContext(
 		core_logger.ToContext(request.Context(), &core_logger.Logger{Logger: zap.NewNop()}),
 	)
-}
-
-func assertErrorResponse(t *testing.T, response *httptest.ResponseRecorder, wantStatus int) {
-	t.Helper()
-
-	if response.Code != wantStatus {
-		t.Fatalf("status = %d, want %d; body = %q", response.Code, wantStatus, response.Body.String())
-	}
-	testutil.AssertJSONContentType(t, response)
-	var body core_http_response.ErrorResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode error response: %v; body = %q", err, response.Body.String())
-	}
-	if body.Error == "" || body.Message == "" {
-		t.Fatalf("error response = %+v, want error and message fields", body)
-	}
 }

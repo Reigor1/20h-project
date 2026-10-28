@@ -15,7 +15,6 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
-	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 	"github.com/Reigor1/20h-project/internal/testutil"
 	"go.uber.org/zap"
 )
@@ -146,7 +145,7 @@ func TestCreatedTask(t *testing.T) {
 
 	handler.CreatedTask(response, request)
 
-	assertJSONStatus(t, response, http.StatusCreated)
+	testutil.AssertJSONStatus(t, response, http.StatusCreated)
 	var got TaskDTOResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode create response: %v", err)
@@ -191,7 +190,7 @@ func TestCreatedTaskRejectsInvalidRequest(t *testing.T) {
 
 			handler.CreatedTask(response, newTaskRequest(http.MethodPost, "/tasks", testCase.body))
 
-			assertErrorResponse(t, response, http.StatusBadRequest)
+			testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 			if service.createTaskCalls != 0 {
 				t.Fatalf("CreateTask() calls = %d, want 0 for invalid request", service.createTaskCalls)
 			}
@@ -211,7 +210,7 @@ func TestCreatedTaskReturnsServiceError(t *testing.T) {
 		newTaskRequest(http.MethodPost, "/tasks", `{"title":"Task","author_user_id":23}`),
 	)
 
-	assertErrorResponse(t, response, http.StatusNotFound)
+	testutil.AssertErrorResponse(t, response, http.StatusNotFound)
 	if service.createTaskCalls != 1 || service.createdTask.Title != "Task" || service.createdTask.AuthorUserID != 23 {
 		t.Fatalf("CreateTask() calls/task = %d/%+v, want one call with request values", service.createTaskCalls, service.createdTask)
 	}
@@ -232,7 +231,7 @@ func TestGetTask(t *testing.T) {
 
 	handler.GetTask(response, request)
 
-	assertJSONStatus(t, response, http.StatusOK)
+	testutil.AssertJSONStatus(t, response, http.StatusOK)
 	var got TaskDTOResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode get task response: %v", err)
@@ -264,7 +263,7 @@ func TestGetTaskRejectsInvalidID(t *testing.T) {
 
 			handler.GetTask(response, request)
 
-			assertErrorResponse(t, response, http.StatusBadRequest)
+			testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 			if service.getTaskCalls != 0 {
 				t.Fatalf("GetTask() calls = %d, want 0 for invalid ID", service.getTaskCalls)
 			}
@@ -289,7 +288,7 @@ func assertTaskLookupError(t *testing.T, serviceError error, wantStatus int) {
 
 	handler.GetTask(response, request)
 
-	assertErrorResponse(t, response, wantStatus)
+	testutil.AssertErrorResponse(t, response, wantStatus)
 	if service.getTaskCalls != 1 || service.getTaskID != 42 {
 		t.Fatalf("GetTask() calls/id = %d/%d, want 1/42", service.getTaskCalls, service.getTaskID)
 	}
@@ -313,7 +312,7 @@ func TestGetTasks(t *testing.T) {
 		newTaskRequest(http.MethodGet, "/tasks?user_id=7&limit=20&offset=40", ""),
 	)
 
-	assertJSONStatus(t, response, http.StatusOK)
+	testutil.AssertJSONStatus(t, response, http.StatusOK)
 	var got []TaskDTOResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode get tasks response: %v", err)
@@ -342,7 +341,7 @@ func TestGetTasksPassesOmittedQueryParametersAsNil(t *testing.T) {
 
 	handler.GetTasks(response, newTaskRequest(http.MethodGet, "/tasks", ""))
 
-	assertJSONStatus(t, response, http.StatusOK)
+	testutil.AssertJSONStatus(t, response, http.StatusOK)
 	if response.Body.String() != "[]\n" {
 		t.Fatalf("empty task list body = %q, want [] JSON", response.Body.String())
 	}
@@ -369,7 +368,7 @@ func TestGetTasksRejectsInvalidQueryParameter(t *testing.T) {
 
 			handler.GetTasks(response, newTaskRequest(http.MethodGet, "/tasks"+testCase.query, ""))
 
-			assertErrorResponse(t, response, http.StatusBadRequest)
+			testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 			if service.getTasksCalls != 0 {
 				t.Fatalf("GetTasks() calls = %d, want 0 for invalid query", service.getTasksCalls)
 			}
@@ -386,7 +385,7 @@ func TestGetTasksReturnsServiceError(t *testing.T) {
 
 	handler.GetTasks(response, newTaskRequest(http.MethodGet, "/tasks?limit=5", ""))
 
-	assertErrorResponse(t, response, http.StatusInternalServerError)
+	testutil.AssertErrorResponse(t, response, http.StatusInternalServerError)
 	if service.getTasksCalls != 1 || !intPointerEquals(service.getTasksLimit, 5) || service.getTasksOffset != nil {
 		t.Fatalf("GetTasks() calls/limit/offset = %d/%v/%v, want 1/5/nil", service.getTasksCalls, service.getTasksLimit, service.getTasksOffset)
 	}
@@ -409,7 +408,7 @@ func TestPatchTaskPreservesOmittedNullAndFalseFields(t *testing.T) {
 
 	handler.PatchTask(response, request)
 
-	assertJSONStatus(t, response, http.StatusOK)
+	testutil.AssertJSONStatus(t, response, http.StatusOK)
 	var got TaskDTOResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode patch response: %v", err)
@@ -449,7 +448,7 @@ func TestPatchTaskPassesProvidedValues(t *testing.T) {
 
 	handler.PatchTask(response, request)
 
-	assertJSONStatus(t, response, http.StatusOK)
+	testutil.AssertJSONStatus(t, response, http.StatusOK)
 	if !nullableStringEquals(service.taskPatch.Title, title) ||
 		!nullableStringEquals(service.taskPatch.Description, description) ||
 		!nullableBoolEquals(service.taskPatch.Completed, true) {
@@ -485,7 +484,7 @@ func TestPatchTaskRejectsInvalidPathOrBody(t *testing.T) {
 
 			handler.PatchTask(response, request)
 
-			assertErrorResponse(t, response, http.StatusBadRequest)
+			testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 			if service.patchTaskCalls != 0 {
 				t.Fatalf("PathTask() calls = %d, want 0 for invalid request", service.patchTaskCalls)
 			}
@@ -504,7 +503,7 @@ func TestPatchTaskReturnsServiceError(t *testing.T) {
 
 	handler.PatchTask(response, request)
 
-	assertErrorResponse(t, response, http.StatusConflict)
+	testutil.AssertErrorResponse(t, response, http.StatusConflict)
 	if service.patchTaskCalls != 1 || service.patchTaskID != 42 || !nullableStringEquals(service.taskPatch.Title, "Updated title") {
 		t.Fatalf("PathTask() calls/id/patch = %d/%d/%+v, want 1/42/title update", service.patchTaskCalls, service.patchTaskID, service.taskPatch)
 	}
@@ -537,7 +536,7 @@ func TestDeleteTaskRejectsInvalidID(t *testing.T) {
 
 	handler.DeleteTask(response, request)
 
-	assertErrorResponse(t, response, http.StatusBadRequest)
+	testutil.AssertErrorResponse(t, response, http.StatusBadRequest)
 	if service.deleteTaskCalls != 0 {
 		t.Fatalf("DeleteTask() calls = %d, want 0 for invalid ID", service.deleteTaskCalls)
 	}
@@ -554,7 +553,7 @@ func TestDeleteTaskReturnsServiceError(t *testing.T) {
 
 	handler.DeleteTask(response, request)
 
-	assertErrorResponse(t, response, http.StatusNotFound)
+	testutil.AssertErrorResponse(t, response, http.StatusNotFound)
 	if service.deleteTaskCalls != 1 || service.deleteTaskID != 42 {
 		t.Fatalf("DeleteTask() calls/id = %d/%d, want 1/42", service.deleteTaskCalls, service.deleteTaskID)
 	}
@@ -607,26 +606,6 @@ func newTaskRequest(method, target, body string) *http.Request {
 	return request.WithContext(
 		core_logger.ToContext(request.Context(), &core_logger.Logger{Logger: zap.NewNop()}),
 	)
-}
-
-func assertJSONStatus(t *testing.T, response *httptest.ResponseRecorder, wantStatus int) {
-	t.Helper()
-	if response.Code != wantStatus {
-		t.Fatalf("status = %d, want %d; body = %q", response.Code, wantStatus, response.Body.String())
-	}
-	testutil.AssertJSONContentType(t, response)
-}
-
-func assertErrorResponse(t *testing.T, response *httptest.ResponseRecorder, wantStatus int) {
-	t.Helper()
-	assertJSONStatus(t, response, wantStatus)
-	var body core_http_response.ErrorResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode error response: %v; body = %q", err, response.Body.String())
-	}
-	if body.Error == "" || body.Message == "" {
-		t.Fatalf("error response = %+v, want error and message fields", body)
-	}
 }
 
 func intPointerEquals(got *int, want int) bool {
