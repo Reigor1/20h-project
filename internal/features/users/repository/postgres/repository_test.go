@@ -11,9 +11,8 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
+	"github.com/Reigor1/20h-project/internal/testutil"
 )
-
-const repositoryOperationTimeout = 3 * time.Second
 
 type repositoryTestPool struct {
 	t *testing.T
@@ -43,7 +42,7 @@ func newRepositoryTestPool(t *testing.T) *repositoryTestPool {
 
 	return &repositoryTestPool{
 		t:                t,
-		operationTimeout: repositoryOperationTimeout,
+		operationTimeout: testutil.RepositoryOperationTimeout,
 	}
 }
 
@@ -261,7 +260,7 @@ func TestCreateUser(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 	pool.rowResult = row
 	repository := NewUsersRepository(pool)
-	ctx := context.WithValue(context.Background(), repositoryContextKey{}, "request")
+	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	got, err := repository.CreateUser(ctx, inputUser)
 
@@ -277,7 +276,7 @@ func TestCreateUser(t *testing.T) {
 	if !reflect.DeepEqual(pool.gotRowArgs, []any{"Ada Lovelace", &phoneNumber}) {
 		t.Fatalf("QueryRow() args = %#v, want name then phone number", pool.gotRowArgs)
 	}
-	assertRepositoryContext(t, pool.gotContext, ctx)
+	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
 	if row.scans != 1 {
 		t.Fatalf("row Scan() calls = %d, want 1", row.scans)
 	}
@@ -309,7 +308,7 @@ func TestGetUser(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 	pool.rowResult = row
 	repository := NewUsersRepository(pool)
-	ctx := context.WithValue(context.Background(), repositoryContextKey{}, "request")
+	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	got, err := repository.GetUser(ctx, 42)
 
@@ -326,7 +325,7 @@ func TestGetUser(t *testing.T) {
 	if !reflect.DeepEqual(pool.gotRowArgs, []any{42}) {
 		t.Fatalf("QueryRow() args = %#v, want [42]", pool.gotRowArgs)
 	}
-	assertRepositoryContext(t, pool.gotContext, ctx)
+	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
 }
 
 func TestGetUserTranslatesNoRowsToNotFound(t *testing.T) {
@@ -372,7 +371,7 @@ func TestGetUsers(t *testing.T) {
 	repository := NewUsersRepository(pool)
 	limit := 25
 	offset := 50
-	ctx := context.WithValue(context.Background(), repositoryContextKey{}, "request")
+	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	got, err := repository.GetUsers(ctx, &limit, &offset)
 
@@ -392,7 +391,7 @@ func TestGetUsers(t *testing.T) {
 	if !reflect.DeepEqual(pool.gotQueryArgs, []any{&limit, &offset}) {
 		t.Fatalf("Query() args = %#v, want limit then offset", pool.gotQueryArgs)
 	}
-	assertRepositoryContext(t, pool.gotContext, ctx)
+	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
 	if rows.closeCalls != 1 {
 		t.Fatalf("rows Close() calls = %d, want 1", rows.closeCalls)
 	}
@@ -482,7 +481,7 @@ func TestPatchUser(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 	pool.rowResult = row
 	repository := NewUsersRepository(pool)
-	ctx := context.WithValue(context.Background(), repositoryContextKey{}, "request")
+	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	got, err := repository.PatchUser(ctx, 42, inputUser)
 
@@ -500,7 +499,7 @@ func TestPatchUser(t *testing.T) {
 	if !reflect.DeepEqual(pool.gotRowArgs, wantArgs) {
 		t.Fatalf("QueryRow() args = %#v, want %#v", pool.gotRowArgs, wantArgs)
 	}
-	assertRepositoryContext(t, pool.gotContext, ctx)
+	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
 }
 
 func TestPatchUserTranslatesNoRowsToConflict(t *testing.T) {
@@ -539,7 +538,7 @@ func TestDeleteUser(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 	pool.execResult = repositoryTestCommandTag{rowsAffected: 1}
 	repository := NewUsersRepository(pool)
-	ctx := context.WithValue(context.Background(), repositoryContextKey{}, "request")
+	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	err := repository.DeleteUser(ctx, 42)
 
@@ -552,7 +551,7 @@ func TestDeleteUser(t *testing.T) {
 	if !reflect.DeepEqual(pool.gotExecArgs, []any{42}) {
 		t.Fatalf("Exec() args = %#v, want [42]", pool.gotExecArgs)
 	}
-	assertRepositoryContext(t, pool.gotContext, ctx)
+	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
 }
 
 func TestDeleteUserReturnsExecutionError(t *testing.T) {
@@ -580,26 +579,5 @@ func TestDeleteUserReturnsNotFoundWhenNoRowsAffected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "id='42'") {
 		t.Fatalf("DeleteUser() error = %v, want requested ID in context", err)
-	}
-}
-
-type repositoryContextKey struct{}
-
-func assertRepositoryContext(t *testing.T, got, parent context.Context) {
-	t.Helper()
-
-	if got == nil {
-		t.Fatal("repository did not pass a context to the pool")
-	}
-	if got.Value(repositoryContextKey{}) != parent.Value(repositoryContextKey{}) {
-		t.Fatal("repository context did not preserve the parent context value")
-	}
-	deadline, ok := got.Deadline()
-	if !ok {
-		t.Fatal("repository context has no timeout deadline")
-	}
-	remaining := time.Until(deadline)
-	if remaining <= 0 || remaining > repositoryOperationTimeout {
-		t.Fatalf("repository context deadline remaining = %v, want within %v", remaining, repositoryOperationTimeout)
 	}
 }
