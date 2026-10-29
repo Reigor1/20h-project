@@ -1,22 +1,14 @@
 package e2e_api_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
 	"testing"
 )
-
-type apiResult struct {
-	StatusCode int
-	Header     http.Header
-	Body       []byte
-}
 
 type userRequest struct {
 	FullName    string  `json:"full_name"`
@@ -30,119 +22,16 @@ type userResponse struct {
 	PhoneNumber *string `json:"phone_number,omitempty"`
 }
 
-type expectedErrorCase struct {
-	name   string
-	method string
-	path   string
-	body   any
-	status int
-}
-
-type expectedSuccessCase struct {
-	name   string
-	method string
-	path   string
-	body   any
-	status int
-	check  func(t *testing.T, result apiResult)
-}
-
-type errorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
-}
-
 func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
+	api := apiClient{httpClient: client, baseURL: baseURL}
 	const usersPath = "/api/v1/users"
-
-	request := func(method, path string, body any) (apiResult, error) {
-		var encodedBody io.Reader
-		if body != nil {
-			encoded, err := json.Marshal(body)
-			if err != nil {
-				return apiResult{}, fmt.Errorf("encode %s %s body: %w", method, path, err)
-			}
-			encodedBody = bytes.NewReader(encoded)
-		}
-
-		req, err := http.NewRequest(method, baseURL+path, encodedBody)
-		if err != nil {
-			return apiResult{}, fmt.Errorf("create %s %s request: %w", method, path, err)
-		}
-		if body != nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return apiResult{}, fmt.Errorf("send %s %s request: %w", method, path, err)
-		}
-		defer resp.Body.Close()
-
-		responseBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return apiResult{}, fmt.Errorf("read %s %s response: %w", method, path, err)
-		}
-		return apiResult{StatusCode: resp.StatusCode, Header: resp.Header.Clone(), Body: responseBody}, nil
-	}
-
-	assertStatus := func(t *testing.T, result apiResult, method, path string, want int) {
-		t.Helper()
-		if result.StatusCode != want {
-			t.Fatalf("%s %s status = %d, want %d; body: %s", method, path, result.StatusCode, want, result.Body)
-		}
-	}
-	decodeError := func(t *testing.T, result apiResult) errorResponse {
-		t.Helper()
-		var got errorResponse
-		if err := json.Unmarshal(result.Body, &got); err != nil {
-			t.Fatalf("decode error response: %v; body: %s", err, result.Body)
-		}
-		if strings.TrimSpace(got.Error) == "" ||
-			strings.TrimSpace(got.Message) == "" {
-			t.Fatalf("error response = %+v, want nonempty error and message", got)
-		}
-		return got
-	}
-	runExpectedErrors := func(t *testing.T, cases []expectedErrorCase) {
-		t.Helper()
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				result, err := request(tc.method, tc.path, tc.body)
-				if err != nil {
-					t.Fatalf("request %s %s: %v", tc.method, tc.path, err)
-				}
-				assertStatus(t, result, tc.method, tc.path, tc.status)
-				decodeError(t, result)
-			})
-		}
-	}
-
-	runExpectedSuccesses := func(t *testing.T, cases []expectedSuccessCase) {
-		t.Helper()
-
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				result, err := request(tc.method, tc.path, tc.body)
-				if err != nil {
-					t.Fatalf("request %s %s: %v", tc.method, tc.path, err)
-				}
-
-				assertStatus(t, result, tc.method, tc.path, tc.status)
-
-				if tc.check != nil {
-					tc.check(t, result)
-				}
-			})
-		}
-	}
 
 	registerUserCleanup := func(t *testing.T, userID int) {
 		t.Helper()
 
 		t.Cleanup(func() {
 			path := fmt.Sprintf("%s/%d", usersPath, userID)
-			result, err := request(http.MethodDelete, path, nil)
+			result, err := api.request(http.MethodDelete, path, nil)
 			if err != nil {
 				t.Errorf("cleanup DELETE %s: %v", path, err)
 				return
@@ -164,7 +53,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 	createUser := func(t *testing.T, name string, phone *string) userResponse {
 		t.Helper()
 
-		result, err := request(
+		result, err := api.request(
 			http.MethodPost,
 			usersPath,
 			userRequest{FullName: name, PhoneNumber: phone},
@@ -191,7 +80,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 
 	t.Run("CreateUser", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
-			runExpectedSuccesses(t, []expectedSuccessCase{
+			runExpectedSuccesses(t, api, []expectedSuccessCase{
 				{
 					name:   "creates user with phone number",
 					method: http.MethodPost,
@@ -249,7 +138,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 		})
 
 		t.Run("ExpectedErrors", func(t *testing.T) {
-			runExpectedErrors(t, []expectedErrorCase{
+			runExpectedErrors(t, api, []expectedErrorCase{
 				{
 					name:   "rejects full name shorter than minimum",
 					method: http.MethodPost,
@@ -386,11 +275,11 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 				})
 			}
 
-			runExpectedSuccesses(t, cases)
+			runExpectedSuccesses(t, api, cases)
 		})
 
 		t.Run("ExpectedErrors", func(t *testing.T) {
-			runExpectedErrors(t, []expectedErrorCase{
+			runExpectedErrors(t, api, []expectedErrorCase{
 				{
 					name:   "rejects noninteger limit",
 					method: http.MethodGet,
@@ -436,7 +325,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 			created := createUser(t, "E2E Get", stringPointer("+1234567890"))
 			path := fmt.Sprintf("%s/%d", usersPath, created.ID)
 
-			runExpectedSuccesses(t, []expectedSuccessCase{
+			runExpectedSuccesses(t, api, []expectedSuccessCase{
 				{
 					name:   "retrieves created user",
 					method: http.MethodGet,
@@ -461,7 +350,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 		})
 
 		t.Run("ExpectedErrors", func(t *testing.T) {
-			runExpectedErrors(t, []expectedErrorCase{
+			runExpectedErrors(t, api, []expectedErrorCase{
 				{
 					name:   "returns not found for missing user",
 					method: http.MethodGet,
@@ -507,7 +396,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 			user := createUser(t, "E2E Delete", nil)
 			path := fmt.Sprintf("%s/%d", usersPath, user.ID)
 
-			runExpectedSuccesses(t, []expectedSuccessCase{
+			runExpectedSuccesses(t, api, []expectedSuccessCase{
 				{
 					name:   "deletes user and makes it unavailable",
 					method: http.MethodDelete,
@@ -516,7 +405,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 					check: func(t *testing.T, _ apiResult) {
 						t.Helper()
 
-						result, err := request(http.MethodGet, path, nil)
+						result, err := api.request(http.MethodGet, path, nil)
 						if err != nil {
 							t.Fatalf("GET deleted user: %v", err)
 						}
@@ -528,14 +417,14 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 							path,
 							http.StatusNotFound,
 						)
-						decodeError(t, result)
+						assertErrorResponse(t, result)
 					},
 				},
 			})
 		})
 
 		t.Run("ExpectedErrors", func(t *testing.T) {
-			runExpectedErrors(t, []expectedErrorCase{
+			runExpectedErrors(t, api, []expectedErrorCase{
 				{
 					name:   "returns not found when deleting missing user",
 					method: http.MethodDelete,
@@ -581,7 +470,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 			user := createUser(t, "E2E Original", stringPointer("+1234567890"))
 			path := fmt.Sprintf("%s/%d", usersPath, user.ID)
 
-			runExpectedSuccesses(t, []expectedSuccessCase{
+			runExpectedSuccesses(t, api, []expectedSuccessCase{
 				{
 					name:   "updates name and preserves omitted phone",
 					method: http.MethodPatch,
@@ -602,7 +491,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 							t.Fatalf("patched user = %+v", patched)
 						}
 
-						getResult, err := request(http.MethodGet, path, nil)
+						getResult, err := api.request(http.MethodGet, path, nil)
 						if err != nil {
 							t.Fatalf("GET patched user: %v", err)
 						}
@@ -623,9 +512,9 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 				},
 			})
 		})
-		
+
 		t.Run("ExpectedErrors", func(t *testing.T) {
-			runExpectedErrors(t, []expectedErrorCase{
+			runExpectedErrors(t, api, []expectedErrorCase{
 				{
 					name:   "returns not found when patching missing user",
 					method: http.MethodPatch,
