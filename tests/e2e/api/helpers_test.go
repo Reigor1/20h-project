@@ -123,3 +123,51 @@ func runExpectedSuccesses(t *testing.T, client apiClient, cases []expectedSucces
 		})
 	}
 }
+
+func registerUserCleanup(t *testing.T, api *apiClient, userID int) {
+	t.Helper()
+	t.Cleanup(func() {
+		const usersPath = "/api/v1/users"
+		path := fmt.Sprintf("%s/%d", usersPath, userID)
+		result, err := api.request(http.MethodDelete, path, nil)
+		if err != nil {
+			t.Errorf("cleanup DELETE %s: %v", path, err)
+			return
+		}
+		if result.StatusCode != http.StatusNoContent &&
+			result.StatusCode != http.StatusNotFound {
+			t.Errorf(
+				"cleanup DELETE %s status = %d, want %d or %d; body: %s",
+				path,
+				result.StatusCode,
+				http.StatusNoContent,
+				http.StatusNotFound,
+				result.Body,
+			)
+		}
+	})
+}
+
+func createUser(t *testing.T, api *apiClient, name string, phone *string) userResponse {
+	t.Helper()
+	const usersPath = "/api/v1/users"
+	result, err := api.request(
+		http.MethodPost,
+		usersPath,
+		userRequest{FullName: name, PhoneNumber: phone},
+	)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	assertStatus(t, result, http.MethodPost, usersPath, http.StatusCreated)
+
+	var user userResponse
+	if err := json.Unmarshal(result.Body, &user); err != nil {
+		t.Fatalf("decode created user: %v; body: %s", err, result.Body)
+	}
+	if user.ID <= 0 {
+		t.Fatalf("created user ID = %d, want positive ID", user.ID)
+	}
+	registerUserCleanup(t, api, user.ID)
+	return user
+}

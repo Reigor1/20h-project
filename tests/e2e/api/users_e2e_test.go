@@ -26,58 +26,6 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 	api := apiClient{httpClient: client, baseURL: baseURL}
 	const usersPath = "/api/v1/users"
 
-	registerUserCleanup := func(t *testing.T, userID int) {
-		t.Helper()
-
-		t.Cleanup(func() {
-			path := fmt.Sprintf("%s/%d", usersPath, userID)
-			result, err := api.request(http.MethodDelete, path, nil)
-			if err != nil {
-				t.Errorf("cleanup DELETE %s: %v", path, err)
-				return
-			}
-
-			if result.StatusCode != http.StatusNoContent &&
-				result.StatusCode != http.StatusNotFound {
-				t.Errorf(
-					"cleanup DELETE %s status = %d, want %d or %d; body: %s",
-					path,
-					result.StatusCode,
-					http.StatusNoContent,
-					http.StatusNotFound,
-					result.Body,
-				)
-			}
-		})
-	}
-	createUser := func(t *testing.T, name string, phone *string) userResponse {
-		t.Helper()
-
-		result, err := api.request(
-			http.MethodPost,
-			usersPath,
-			userRequest{FullName: name, PhoneNumber: phone},
-		)
-		if err != nil {
-			t.Fatalf("create user: %v", err)
-		}
-
-		assertStatus(t, result, http.MethodPost, usersPath, http.StatusCreated)
-
-		var user userResponse
-		if err := json.Unmarshal(result.Body, &user); err != nil {
-			t.Fatalf("decode created user: %v; body: %s", err, result.Body)
-		}
-
-		if user.ID <= 0 {
-			t.Fatalf("created user ID = %d, want positive ID", user.ID)
-		}
-
-		registerUserCleanup(t, user.ID)
-
-		return user
-	}
-
 	t.Run("CreateUser", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
 			runExpectedSuccesses(t, api, []expectedSuccessCase{
@@ -101,7 +49,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 						if got.ID <= 0 {
 							t.Fatalf("created user ID = %d, want positive ID", got.ID)
 						}
-						registerUserCleanup(t, got.ID)
+						registerUserCleanup(t, &api, got.ID)
 
 						if got.FullName != "E2E Create" ||
 							got.PhoneNumber == nil ||
@@ -127,7 +75,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 						if got.ID <= 0 {
 							t.Fatalf("created user ID = %d, want positive ID", got.ID)
 						}
-						registerUserCleanup(t, got.ID)
+						registerUserCleanup(t, &api, got.ID)
 
 						if got.FullName != "E2E Create" || got.PhoneNumber != nil {
 							t.Fatalf("created user = %+v", got)
@@ -195,9 +143,9 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 	t.Run("GetUsers", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
 			created := []userResponse{
-				createUser(t, "E2E Page A", nil),
-				createUser(t, "E2E Page B", nil),
-				createUser(t, "E2E Page C", nil),
+				createUser(t, &api, "E2E Page A", nil),
+				createUser(t, &api, "E2E Page B", nil),
+				createUser(t, &api, "E2E Page C", nil),
 			}
 
 			if !(created[0].ID < created[1].ID && created[1].ID < created[2].ID) {
@@ -322,7 +270,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 
 	t.Run("GetUser", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
-			created := createUser(t, "E2E Get", stringPointer("+1234567890"))
+			created := createUser(t, &api, "E2E Get", stringPointer("+1234567890"))
 			path := fmt.Sprintf("%s/%d", usersPath, created.ID)
 
 			runExpectedSuccesses(t, api, []expectedSuccessCase{
@@ -393,7 +341,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 
 	t.Run("DeleteUser", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
-			user := createUser(t, "E2E Delete", nil)
+			user := createUser(t, &api, "E2E Delete", nil)
 			path := fmt.Sprintf("%s/%d", usersPath, user.ID)
 
 			runExpectedSuccesses(t, api, []expectedSuccessCase{
@@ -467,7 +415,7 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 
 	t.Run("PatchUser", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
-			user := createUser(t, "E2E Original", stringPointer("+1234567890"))
+			user := createUser(t, &api, "E2E Original", stringPointer("+1234567890"))
 			path := fmt.Sprintf("%s/%d", usersPath, user.ID)
 
 			runExpectedSuccesses(t, api, []expectedSuccessCase{
