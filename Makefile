@@ -140,6 +140,10 @@ tests-e2e:
 test-e2e-api:
 	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
 	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml exec -T postgres-test \
+			sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
+			< "${PROJECT_ROOT}/migrations/000001_init.up.sql" && \
+		export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
 		go test -count=1 -v -run \
 			'^TestApiE2E$$' \
 			${PROJECT_ROOT}/tests/e2e/api/; \
