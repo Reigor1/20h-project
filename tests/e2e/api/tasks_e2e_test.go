@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -205,38 +206,102 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 
 	t.Run("GetTasks", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
-			created := createTask(t)
-
-			query := url.Values{
-				"limit":  {"10"},
-				"offset": {"0"},
+			createdTasks := []taskResponse{
+				createTask(t),
+				createTask(t),
+				createTask(t),
 			}
-			path := tasksPath + "?" + query.Encode()
 
-			runExpectedSuccesses(t, api, []expectedSuccessCase{
+			expectedIDs := make(map[int]struct{}, len(createdTasks))
+			for _, task := range createdTasks {
+				expectedIDs[task.ID] = struct{}{}
+			}
+
+			seenIDs := make(map[int]struct{}, len(createdTasks))
+
+			testCases := []struct {
+				name      string
+				limit     int
+				offset    int
+				wantCount int
+			}{
 				{
-					name:   "lists tasks with pagination",
-					method: http.MethodGet,
-					path:   path,
-					status: http.StatusOK,
-					check: func(t *testing.T, result apiResult) {
-						t.Helper()
-
-						var got []taskResponse
-						if err := json.Unmarshal(result.Body, &got); err != nil {
-							t.Fatalf("decode tasks: %v; body: %s", err, result.Body)
-						}
-
-						for _, task := range got {
-							if task.ID == created.ID {
-								return
-							}
-						}
-
-						t.Fatalf("task %d missing from list: %+v", created.ID, got)
-					},
+					name:      "lists first page",
+					limit:     2,
+					offset:    0,
+					wantCount: 2,
 				},
-			})
+				{
+					name:      "lists second page",
+					limit:     2,
+					offset:    2,
+					wantCount: 1,
+				},
+				{
+					name:      "returns empty list when offset exceeds available tasks",
+					limit:     2,
+					offset:    3,
+					wantCount: 0,
+				},
+			}
+
+			var successCases []expectedSuccessCase
+
+			for _, tc := range testCases {
+				query := url.Values{
+					"limit":  {strconv.Itoa(tc.limit)},
+					"offset": {strconv.Itoa(tc.offset)},
+				}
+
+				path := tasksPath + "?" + query.Encode()
+
+				successCases = append(
+					successCases,
+					newJSONSuccessCase[[]taskResponse, struct{}](
+						http.MethodGet,
+						http.StatusOK,
+						func(t *testing.T, got []taskResponse, _ *struct{}) {
+							t.Helper()
+
+							if len(got) != tc.wantCount {
+								t.Fatalf(
+									"expected %d tasks, got %d: %+v",
+									tc.wantCount,
+									len(got),
+									got,
+								)
+							}
+
+							for _, task := range got {
+								if _, ok := expectedIDs[task.ID]; !ok {
+									t.Fatalf("unexpected task in response: %+v", task)
+								}
+
+								if _, ok := seenIDs[task.ID]; ok {
+									t.Fatalf(
+										"task %d appears more than once across pagination results",
+										task.ID,
+									)
+								}
+
+								seenIDs[task.ID] = struct{}{}
+							}
+						},
+					)(
+						tc.name,
+						path,
+						nil,
+					),
+				)
+			}
+
+			runExpectedSuccesses(t, api, successCases)
+
+			for id := range expectedIDs {
+				if _, ok := seenIDs[id]; !ok {
+					t.Errorf("task %d missing from pagination results", id)
+				}
+			}
 		})
 
 		t.Run("ExpectedErrors", func(t *testing.T) {
@@ -245,6 +310,48 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 					name:   "rejects noninteger limit",
 					method: http.MethodGet,
 					path:   tasksPath + "?limit=abc",
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects noninteger offset",
+					method: http.MethodGet,
+					path:   tasksPath + "?offset=abc",
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects decimal limit",
+					method: http.MethodGet,
+					path:   tasksPath + "?limit=1.5",
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects decimal offset",
+					method: http.MethodGet,
+					path:   tasksPath + "?offset=1.5",
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects overflowing limit",
+					method: http.MethodGet,
+					path:   tasksPath + "?limit=999999999999999999999999999999",
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects overflowing offset",
+					method: http.MethodGet,
+					path:   tasksPath + "?offset=999999999999999999999999999999",
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects negative limit",
+					method: http.MethodGet,
+					path:   tasksPath + "?limit=-1",
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects negative offset",
+					method: http.MethodGet,
+					path:   tasksPath + "?offset=-1",
 					status: http.StatusBadRequest,
 				},
 			})
@@ -256,25 +363,29 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 			created := createTask(t)
 			path := fmt.Sprintf("%s/%d", tasksPath, created.ID)
 
-			runExpectedSuccesses(t, api, []expectedSuccessCase{
-				{
-					name:   "retrieves task by ID",
-					method: http.MethodGet,
-					path:   path,
-					status: http.StatusOK,
-					check: func(t *testing.T, result apiResult) {
-						t.Helper()
+			newGetTaskCase := newJSONSuccessCase[taskResponse, struct{}](
+				http.MethodGet,
+				http.StatusOK,
+				func(t *testing.T, got taskResponse, _ *struct{}) {
+					t.Helper()
 
-						var got taskResponse
-						if err := json.Unmarshal(result.Body, &got); err != nil {
-							t.Fatalf("decode task: %v; body: %s", err, result.Body)
-						}
-
-						if got.ID != created.ID || got.Title != created.Title {
-							t.Fatalf("task = %+v, want %+v", got, created)
-						}
-					},
+					if got.ID != created.ID || got.Title != created.Title {
+						t.Fatalf(
+							"task = %+v, want ID = %d, Title = %q",
+							got,
+							created.ID,
+							created.Title,
+						)
+					}
 				},
+			)
+
+			runExpectedSuccesses(t, api, []expectedSuccessCase{
+				newGetTaskCase(
+					"retrieves task by ID",
+					path,
+					nil,
+				),
 			})
 		})
 

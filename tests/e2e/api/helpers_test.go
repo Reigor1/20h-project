@@ -153,6 +153,32 @@ func newJSONSuccessCase[Response any, Request any](
 	}
 }
 
+// func newNoContentSuccessCase(
+// 	method string,
+// 	status int,
+// ) func(name, path string, body any) expectedSuccessCase {
+// 	return func(
+// 		name string,
+// 		path string,
+// 		body any,
+// 	) expectedSuccessCase {
+// 		return expectedSuccessCase{
+// 			name:   name,
+// 			method: method,
+// 			path:   path,
+// 			body:   body,
+// 			status: status,
+// 			check: func(t *testing.T, result apiResult) {
+//                 t.Helper()
+
+//                 if len(result.Body) != 0 {
+//                     t.Fatalf("expected empty response body, got: %s", result.Body)
+//                 }
+//             },
+// 		}
+// 	}
+// }
+
 func runExpectedSuccesses(t *testing.T, client apiClient, cases []expectedSuccessCase) {
 	t.Helper()
 	for _, tc := range cases {
