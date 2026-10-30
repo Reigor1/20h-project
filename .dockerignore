@@ -1,0 +1,27 @@
+# Git
+.git
+
+# Environment files and secrets
+.env
+.env.*
+
+# Local database data and application logs
+out/
+
+# Local build artifacts
+bin/
+dist/
+*.test
+coverage.out
+coverage.html
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Codex instructions and project documentation
+AGENTS.md
+README.md
+codex/

@@ -81,3 +81,72 @@ swagger-gen:
 		--parseDependency
 ps: 
 	@docker compose ps
+
+tests-integration: 
+	@$(MAKE) test-integration-pgx
+	@$(MAKE) test-integration-http
+	@$(MAKE) test-integration-users-postgres
+	@$(MAKE) test-integration-tasks-postgres
+	@$(MAKE) test-integration-statistics-postgres
+
+test-integration-pgx:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		go test -count=1 -v -run \
+			'^(TestPostgresPoolIntegration|TestNewPoolRejectsInvalidConfiguration)$$' \
+			${PROJECT_ROOT}/tests/integration/infrastructure; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
+		exit $$test_status
+
+test-integration-http:
+	@go test -count=1 -v -run \
+		'^TestRun(ServesRequestsAndShutsDownGracefully|ReturnsListenError)$$' \
+		${PROJECT_ROOT}/tests/integration/infrastructure
+
+test-integration-users-postgres:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		go test -count=1 -v -run \
+			'^TestUsersRepositoryIntegration$$' \
+			${PROJECT_ROOT}/tests/integration/features/users/repository/; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
+		exit $$test_status
+
+test-integration-tasks-postgres:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		go test -count=1 -v -run \
+			'^TestTasksRepositoryIntegration$$' \
+			${PROJECT_ROOT}/tests/integration/features/tasks/repository/; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
+		exit $$test_status
+
+test-integration-statistics-postgres:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		go test -count=1 -v -run \
+			'^TestStatisticsRepositoryIntegration$$' \
+			${PROJECT_ROOT}/tests/integration/features/statistics/repository/; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
+		exit $$test_status
+
+tests-e2e:
+	@$(MAKE) test-e2e-api
+
+test-e2e-api:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml exec -T postgres-test \
+			sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
+			< "${PROJECT_ROOT}/migrations/000001_init.up.sql" && \
+		export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
+		go test -count=1 -v -run \
+			'^TestApiE2E$$' \
+			${PROJECT_ROOT}/tests/e2e/api/; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
+		exit $$test_status
