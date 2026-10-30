@@ -29,16 +29,14 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 	}
 	const tasksPath = "/api/v1/tasks"
 
-	var authorID int
-
 	createTask := func(t *testing.T) taskResponse {
 		t.Helper()
 
-		authorID = ensureTaskAuthor(t, api, &authorID)
+		author := createUser(t, &api, "E2E Task Author", nil)
 
 		result, err := api.request(http.MethodPost, tasksPath, taskRequest{
 			Title:        "E2E task",
-			AuthorUserID: authorID,
+			AuthorUserID: author.ID,
 		})
 		if err != nil {
 			t.Fatalf("create task: %v", err)
@@ -62,6 +60,8 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 
 	t.Run("CreateTask", func(t *testing.T) {
 		t.Run("Success", func(t *testing.T) {
+			author := createUser(t, &api, "E2E Task Author", nil)
+
 			runExpectedSuccesses(t, api, []expectedSuccessCase{
 				{
 					name:   "creates a task",
@@ -69,7 +69,7 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 					path:   tasksPath,
 					body: taskRequest{
 						Title:        "E2E task",
-						AuthorUserID: ensureTaskAuthor(t, api, &authorID),
+						AuthorUserID: author.ID,
 					},
 					status: http.StatusCreated,
 					check: func(t *testing.T, result apiResult) {
@@ -80,11 +80,11 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 							t.Fatalf("decode task: %v; body: %s", err, result.Body)
 						}
 
+						registerTaskCleanup(t, api, tasksPath, got.ID)
+
 						if got.ID <= 0 || got.Title != "E2E task" {
 							t.Fatalf("created task = %+v", got)
 						}
-
-						registerTaskCleanup(t, api, tasksPath, got.ID)
 					},
 				},
 			})
@@ -263,17 +263,6 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 			})
 		})
 	})
-}
-
-func ensureTaskAuthor(t *testing.T, api apiClient, authorID *int) int {
-	t.Helper()
-
-	if *authorID == 0 {
-		user := createUser(t, &api, "E2E Task Author", nil)
-		*authorID = user.ID
-	}
-
-	return *authorID
 }
 
 func registerTaskCleanup(t *testing.T, api apiClient, tasksPath string, taskID int) {
