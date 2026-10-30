@@ -108,6 +108,51 @@ func runExpectedErrors(t *testing.T, client apiClient, cases []expectedErrorCase
 	}
 }
 
+func newJSONSuccessCase[Response any, Request any](
+	method string,
+	status int,
+	validate func(t *testing.T, got Response, input *Request),
+) func(
+	name string,
+	path string,
+	body *Request,
+) expectedSuccessCase {
+	return func(
+		name string,
+		path string,
+		body *Request,
+	) expectedSuccessCase {
+		var requestBody any
+		if body != nil {
+			requestBody = *body
+		}
+
+		return expectedSuccessCase{
+			name:   name,
+			method: method,
+			path:   path,
+			body:   requestBody,
+			status: status,
+			check: func(t *testing.T, result apiResult) {
+				t.Helper()
+
+				var got Response
+				if err := json.Unmarshal(result.Body, &got); err != nil {
+					t.Fatalf(
+						"decode response: %v; body: %s",
+						err,
+						result.Body,
+					)
+				}
+
+				if validate != nil {
+					validate(t, got, body)
+				}
+			},
+		}
+	}
+}
+
 func runExpectedSuccesses(t *testing.T, client apiClient, cases []expectedSuccessCase) {
 	t.Helper()
 	for _, tc := range cases {

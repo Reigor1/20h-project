@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -62,44 +64,140 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 		t.Run("Success", func(t *testing.T) {
 			author := createUser(t, &api, "E2E Task Author", nil)
 
+			newCreateTaskCase := newJSONSuccessCase[taskResponse, taskRequest](
+				http.MethodPost,
+				http.StatusCreated,
+				func(t *testing.T, got taskResponse, input *taskRequest) {
+					if input == nil {
+						t.Fatal("task request must not be nil")
+					}
+
+					if got.ID <= 0 {
+						t.Fatalf("created task ID = %d, want positive ID", got.ID)
+					}
+
+					registerTaskCleanup(t, api, tasksPath, got.ID)
+
+					if got.Title != input.Title ||
+						got.AuthorUserID != input.AuthorUserID ||
+						!reflect.DeepEqual(got.Description, input.Description) {
+						t.Fatalf("created task = %+v, want %+v", got, input)
+					}
+				},
+			)
+
 			runExpectedSuccesses(t, api, []expectedSuccessCase{
-				{
-					name:   "creates a task",
-					method: http.MethodPost,
-					path:   tasksPath,
-					body: taskRequest{
+				newCreateTaskCase(
+					"creates task without description",
+					tasksPath,
+					&taskRequest{
 						Title:        "E2E task",
 						AuthorUserID: author.ID,
 					},
-					status: http.StatusCreated,
-					check: func(t *testing.T, result apiResult) {
-						t.Helper()
-
-						var got taskResponse
-						if err := json.Unmarshal(result.Body, &got); err != nil {
-							t.Fatalf("decode task: %v; body: %s", err, result.Body)
-						}
-
-						registerTaskCleanup(t, api, tasksPath, got.ID)
-
-						if got.ID <= 0 || got.Title != "E2E task" {
-							t.Fatalf("created task = %+v", got)
-						}
+				),
+				newCreateTaskCase(
+					"accepts minimum title length",
+					tasksPath,
+					&taskRequest{
+						Title:        "T",
+						AuthorUserID: author.ID,
 					},
-				},
+				),
+				newCreateTaskCase(
+					"accepts maximum title length",
+					tasksPath,
+					&taskRequest{
+						Title:        strings.Repeat("T", 100),
+						AuthorUserID: author.ID,
+					},
+				),
+				newCreateTaskCase(
+					"accepts minimum description length",
+					tasksPath,
+					&taskRequest{
+						Title:        "E2E task",
+						Description:  stringPointer("D"),
+						AuthorUserID: author.ID,
+					},
+				),
+				newCreateTaskCase(
+					"accepts maximum description length",
+					tasksPath,
+					&taskRequest{
+						Title:        "E2E task",
+						Description:  stringPointer(strings.Repeat("D", 1000)),
+						AuthorUserID: author.ID,
+					},
+				),
 			})
 		})
 
 		t.Run("ExpectedErrors", func(t *testing.T) {
+			author := createUser(t, &api, "E2E Task Author", nil)
+
+			emptyDescription := ""
+			tooLongDescription := strings.Repeat("D", 1001)
+
 			runExpectedErrors(t, api, []expectedErrorCase{
 				{
 					name:   "rejects empty title",
 					method: http.MethodPost,
 					path:   tasksPath,
 					body: taskRequest{
-						AuthorUserID: 1,
+						AuthorUserID: author.ID,
 					},
 					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects title longer than maximum",
+					method: http.MethodPost,
+					path:   tasksPath,
+					body: taskRequest{
+						Title:        strings.Repeat("T", 101),
+						AuthorUserID: author.ID,
+					},
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects empty description",
+					method: http.MethodPost,
+					path:   tasksPath,
+					body: taskRequest{
+						Title:        "E2E task",
+						Description:  &emptyDescription,
+						AuthorUserID: author.ID,
+					},
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects description longer than maximum",
+					method: http.MethodPost,
+					path:   tasksPath,
+					body: taskRequest{
+						Title:        "E2E task",
+						Description:  &tooLongDescription,
+						AuthorUserID: author.ID,
+					},
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "rejects missing author ID",
+					method: http.MethodPost,
+					path:   tasksPath,
+					body: taskRequest{
+						Title: "E2E task",
+					},
+					status: http.StatusBadRequest,
+				},
+				{
+					name:   "returns not found for missing author",
+					method: http.MethodPost,
+					path:   tasksPath,
+					body: taskRequest{
+						Title:        "E2E task",
+						AuthorUserID: 2147483647,
+					},
+					status: http.StatusNotFound,
 				},
 			})
 		})
