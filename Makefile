@@ -82,6 +82,10 @@ swagger-gen:
 ps: 
 	@docker compose ps
 
+# =====================================================
+# Testing
+# =====================================================
+
 tests-integration: 
 	@$(MAKE) test-integration-pgx
 	@$(MAKE) test-integration-http
@@ -150,3 +154,43 @@ test-e2e-api:
 		test_status=$$?; \
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
+
+# =====================================================
+# Observability
+# =====================================================
+
+# Start all observability services in order.
+observability-up:
+	@$(MAKE) otel-collector-up
+	@$(MAKE) prometheus-up
+	@$(MAKE) grafana-up
+
+# Stop all observability services in reverse order.
+observability-down:
+	@$(MAKE) grafana-down
+	@$(MAKE) prometheus-down
+	@$(MAKE) otel-collector-down
+
+# Start OpenTelemetry Collector.
+otel-collector-up:
+	docker compose up -d otel-collector
+
+# Stop OpenTelemetry Collector.
+otel-collector-down:
+	docker compose stop otel-collector
+
+# Start Prometheus.
+prometheus-up:
+	docker compose up -d prometheus
+
+# Stop Prometheus.
+prometheus-down:
+	docker compose stop prometheus
+
+# Start Grafana.
+grafana-up:
+	docker compose up -d grafana
+
+# Stop Grafana.
+grafana-down:
+	docker compose stop grafana
