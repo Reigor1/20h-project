@@ -8,8 +8,10 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/Reigor1/20h-project/docs"
 	core_config "github.com/Reigor1/20h-project/internal/core/config"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
@@ -23,14 +25,12 @@ import (
 	users_service "github.com/Reigor1/20h-project/internal/features/users/service"
 	users_transport_http "github.com/Reigor1/20h-project/internal/features/users/transport/http"
 	"go.uber.org/zap"
-
-	_ "github.com/Reigor1/20h-project/docs"
 )
 
 // @Title 		 Golang Todo API
 // @Version 	 1.0
 // @Description  Todo Application REST-API scheme
-// @Description  `Перед работой помолитесь Богу машины`
+// @Description  \`Перед работой помолитесь Богу машины\`
 // @Host 		 127.0.0.1:5050
 // @BasePath 	 /api/v1
 func main() {
@@ -63,6 +63,29 @@ func main() {
 	}
 	defer pool.Close()
 
+	logger.Debug("initializing observability")
+
+	observability, err := core_observability.New(
+		ctx,
+		core_observability.Config{
+			ServiceName: "20h-project",
+		},
+	)
+	if err != nil {
+		logger.Fatal("failed to init observability", zap.Error(err))
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer shutdownCancel()
+
+		if err := observability.Shutdown(shutdownCtx); err != nil {
+			logger.Error("failed to shutdown observability", zap.Error(err))
+		}
+	}()
+
 	logger.Debug("initializing feature", zap.String("feature", "users"))
 	usersRepository := users_postgres_repository.NewUsersRepository(pool)
 	usersService := users_service.NewUsersService(usersRepository)
@@ -88,6 +111,8 @@ func main() {
 		core_http_middleware.Trace(),
 		core_http_middleware.Panic(),
 	)
+	httpServer.RegisterAPIRouteInstrumenter(observability.InstrumentHTTPRoute)
+
 	apiVersionRouter1 := core_http_server.NewAPIVersionRouter(core_http_server.ApiVersion1)
 	apiVersionRouter1.RegisterRouts(usersTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(tasksTransportHTTP.Routes()...)

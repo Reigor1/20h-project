@@ -18,7 +18,8 @@ type HTTPServer struct {
 	config Config
 	log    *core_logger.Logger
 
-	middleware []core_http_middleware.Middleware
+	middleware           []core_http_middleware.Middleware
+	apiRouteInstrumenter APIRouteInstrumenter
 }
 
 func NewHTTPServer(
@@ -34,13 +35,24 @@ func NewHTTPServer(
 	}
 }
 
+func (s *HTTPServer) RegisterAPIRouteInstrumenter(instrumenter APIRouteInstrumenter) {
+	s.apiRouteInstrumenter = instrumenter
+}
+
 func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 	for _, router := range routers {
 		prefix := "/api/" + string(router.apiVersion)
 
+		var instrumenter APIRouteInstrumenter
+		if s.apiRouteInstrumenter != nil {
+			instrumenter = func(method, path string, handler http.Handler) http.Handler {
+				return s.apiRouteInstrumenter(method, prefix+path, handler)
+			}
+		}
+
 		s.mux.Handle(
 			prefix+"/",
-			http.StripPrefix(prefix, router.WithMiddleware()),
+			http.StripPrefix(prefix, router.WithMiddleware(instrumenter)),
 		)
 	}
 }

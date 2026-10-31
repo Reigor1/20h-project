@@ -15,10 +15,13 @@ services:
       - LOGGER_LEVEL=${LOGGER_LEVEL}
       - TIME_ZONE=${TIME_ZONE}
       - LOGGER_FOLDER=/app/out/logs
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     volumes:
       - ${PROJECT_ROOT}/out/logs:/app/out/logs
     ports:
       - "5050:5050"
+    depends_on:
+      - otel-collector
     restart: always
 
   todoapp-postgres:
