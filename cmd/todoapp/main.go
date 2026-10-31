@@ -8,7 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/Reigor1/20h-project/docs"
 	core_config "github.com/Reigor1/20h-project/internal/core/config"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
@@ -25,12 +24,14 @@ import (
 	users_service "github.com/Reigor1/20h-project/internal/features/users/service"
 	users_transport_http "github.com/Reigor1/20h-project/internal/features/users/transport/http"
 	"go.uber.org/zap"
+
+	_ "github.com/Reigor1/20h-project/docs"
 )
 
 // @Title 		 Golang Todo API
 // @Version 	 1.0
 // @Description  Todo Application REST-API scheme
-// @Description  \`Перед работой помолитесь Богу машины\`
+// @Description  `Перед работой помолитесь Богу машины`
 // @Host 		 127.0.0.1:5050
 // @BasePath 	 /api/v1
 func main() {

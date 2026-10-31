@@ -1,6 +1,7 @@
 package core_observability
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,7 +12,7 @@ import (
 func TestInstrumentHTTPRouteSetsFullRoutePattern(t *testing.T) {
 	provider := sdkmetric.NewMeterProvider()
 	defer func() {
-		_ = provider.Shutdown(t.Context())
+		_ = provider.Shutdown(context.Background())
 	}()
 
 	observability := &Observability{meterProvider: provider}
