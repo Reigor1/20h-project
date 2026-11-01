@@ -99,6 +99,8 @@ services:
     volumes:
       - ${PROJECT_ROOT}/out/grafana:/var/lib/grafana
       - ${PROJECT_ROOT}/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ${PROJECT_ROOT}/monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ${PROJECT_ROOT}/monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
