@@ -9,11 +9,13 @@ import (
 )
 
 type Config struct {
-	BaseURL        string
-	UsersCount     int
-	TasksPerUser   int
-	RequestTimeout time.Duration
-	CleanupTimeout time.Duration
+	BaseURL            string
+	UsersCount         int
+	TasksPerUser       int
+	RequestTimeout     time.Duration
+	CleanupTimeout     time.Duration
+	StageDuration      time.Duration
+	ErrorRequestsCount int
 }
 
 func loadConfig() (Config, error) {
@@ -49,6 +51,18 @@ func loadConfig() (Config, error) {
 		15*time.Second,
 		"Timeout for fixture cleanup",
 	)
+	flag.DurationVar(
+		&config.StageDuration,
+		"stage-duration",
+		30*time.Second,
+		"Duration of each workload stage",
+	)
+	flag.IntVar(
+		&config.ErrorRequestsCount,
+		"error-requests",
+		10,
+		"Number of requests in the HTTP 5xx scenario",
+	)
 
 	flag.Parse()
 
@@ -62,6 +76,14 @@ func loadConfig() (Config, error) {
 
 	if config.RequestTimeout <= 0 || config.CleanupTimeout <= 0 {
 		return Config{}, fmt.Errorf("timeouts must be greater than zero")
+	}
+
+	if config.StageDuration <= 0 {
+		return Config{}, fmt.Errorf("stage-duration must be greater than zero")
+	}
+	
+	if config.ErrorRequestsCount <= 0 {
+		return Config{}, fmt.Errorf("error-requests must be greater than zero")
 	}
 
 	parsedURL, err := url.Parse(config.BaseURL)

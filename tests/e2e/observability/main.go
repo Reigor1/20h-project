@@ -94,7 +94,39 @@ func run(ctx context.Context, config Config) (runErr error) {
 	)
 
 	fmt.Println("Fixture lifecycle phase completed.")
-	fmt.Println("Next phases: route coverage, ramp-up workload, HTTP 5xx scenario.")
+
+	fmt.Println("Running route coverage...")
+
+	if err := runRouteCoverage(ctx, client, fixtures); err != nil {
+		return fmt.Errorf("route coverage: %w", err)
+	}
+
+	fmt.Println("Route coverage phase completed.")
+
+	fmt.Println("Running ramp-up workload...")
+
+	if err := runWorkload(
+		ctx,
+		client,
+		fixtures,
+		config.StageDuration,
+	); err != nil {
+		return fmt.Errorf("ramp-up workload: %w", err)
+	}
+
+	fmt.Println("Ramp-up workload phase completed.")
+
+	fmt.Println("Running HTTP 5xx scenario...")
+
+	if err := runErrorScenario(
+		ctx,
+		client,
+		config.ErrorRequestsCount,
+	); err != nil {
+		return fmt.Errorf("HTTP 5xx scenario: %w", err)
+	}
+
+	fmt.Println("HTTP 5xx scenario phase completed.")
 
 	return nil
 }
