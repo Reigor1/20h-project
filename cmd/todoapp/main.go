@@ -11,6 +11,7 @@ import (
 	core_config "github.com/Reigor1/20h-project/internal/core/config"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
+	core_observability_postgres "github.com/Reigor1/20h-project/internal/core/observability/postgres"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
@@ -84,6 +85,21 @@ func main() {
 
 		if err := observability.Shutdown(shutdownCtx); err != nil {
 			logger.Error("failed to shutdown observability", zap.Error(err))
+		}
+	}()
+
+	logger.Debug("initializing postgres pool metrics")
+
+	poolMetrics, err := core_observability_postgres.RegisterPoolMetrics(
+		observability.MeterProvider(),
+		pool,
+	)
+	if err != nil {
+		logger.Fatal("failed to init postgres pool metrics", zap.Error(err))
+	}
+	defer func() {
+		if err := poolMetrics.Shutdown(); err != nil {
+			logger.Error("failed to shutdown postgres pool metrics", zap.Error(err))
 		}
 	}()
 
