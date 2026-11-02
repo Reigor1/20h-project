@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -20,13 +21,14 @@ type workloadTarget struct {
 }
 
 type workloadStats struct {
-	requests        int64
-	successful      int64
-	failed          int64
-	transportErrors int64
-	totalLatency    time.Duration
-	maxLatency      time.Duration
-	statusCodes     map[int]int64
+	requests         int64
+	successful       int64
+	failed           int64
+	transportErrors  int64
+	cancelledRequests int64
+	totalLatency     time.Duration
+	maxLatency       time.Duration
+	statusCodes      map[int]int64
 }
 
 func runWorkload(
@@ -60,7 +62,9 @@ func runWorkload(
 
 		stageStartedAt := time.Now()
 
-		stageCtx, cancel := context.WithTimeout(ctx, stageDuration)
+		// This context controls only the duration of the workload stage.
+		// It must not cancel requests that are already in progress.
+		stageCtx, cancelStage := context.WithTimeout(ctx, stageDuration)
 
 		workersStats := make([]workloadStats, workerCount)
 
@@ -76,6 +80,7 @@ func runWorkload(
 
 				runWorkloadWorker(
 					stageCtx,
+					ctx,
 					client,
 					targets,
 					workerID,
@@ -84,10 +89,28 @@ func runWorkload(
 			}(workerID)
 		}
 
-		workers.Wait()
-		cancel()
+		// Wait until the stage duration expires or the parent context
+		// is cancelled. Workers will stop starting new requests.
+		<-stageCtx.Done()
 
-		elapsed := time.Since(stageStartedAt)
+		// The actual load duration excludes the time spent waiting
+		// for in-flight requests to finish.
+		loadDuration := time.Since(stageStartedAt)
+
+		if ctx.Err() == nil {
+			loadDuration = stageDuration
+		}
+
+		cancelStage()
+
+		// Graceful drain: wait for all requests that were started
+		// during this stage to finish.
+		workers.Wait()
+
+		drainDuration := time.Since(stageStartedAt) - loadDuration
+		if drainDuration < 0 {
+			drainDuration = 0
+		}
 
 		var stageStats workloadStats
 		stageStats.statusCodes = make(map[int]int64)
@@ -99,7 +122,8 @@ func runWorkload(
 		printWorkloadStage(
 			stageIndex+1,
 			workerCount,
-			elapsed,
+			loadDuration,
+			drainDuration,
 			stageStats,
 		)
 
@@ -111,10 +135,11 @@ func runWorkload(
 	}
 
 	fmt.Printf(
-		"Ramp-up workload completed: requests=%d, successful=%d, failed=%d\n",
+		"Ramp-up workload completed: requests=%d, successful=%d, failed=%d, cancelled=%d\n",
 		totalStats.requests,
 		totalStats.successful,
 		totalStats.failed,
+		totalStats.cancelledRequests,
 	)
 
 	if totalStats.failed > 0 {
@@ -128,7 +153,9 @@ func runWorkload(
 	return nil
 }
 
-func buildWorkloadTargets(fixtures *fixtureSet) ([]workloadTarget, error) {
+func buildWorkloadTargets(
+	fixtures *fixtureSet,
+) ([]workloadTarget, error) {
 	if fixtures == nil || len(fixtures.users) == 0 {
 		return nil, fmt.Errorf("no fixture users available")
 	}
@@ -148,8 +175,6 @@ func buildWorkloadTargets(fixtures *fixtureSet) ([]workloadTarget, error) {
 	}
 
 	for _, user := range fixtures.users {
-		// Users without tasks may have been created and deleted
-		// by the route coverage phase.
 		if len(user.TaskIDs) == 0 {
 			continue
 		}
@@ -190,7 +215,8 @@ func buildWorkloadTargets(fixtures *fixtureSet) ([]workloadTarget, error) {
 }
 
 func runWorkloadWorker(
-	ctx context.Context,
+	stageCtx context.Context,
+	requestCtx context.Context,
 	client *apiClient,
 	targets []workloadTarget,
 	workerID int,
@@ -199,8 +225,14 @@ func runWorkloadWorker(
 	requestIndex := workerID
 
 	for {
-		if ctx.Err() != nil {
+		// Stop starting new requests when the stage ends or
+		// the parent context is cancelled.
+		select {
+		case <-stageCtx.Done():
 			return
+		case <-requestCtx.Done():
+			return
+		default:
 		}
 
 		target := targets[requestIndex%len(targets)]
@@ -208,8 +240,10 @@ func runWorkloadWorker(
 
 		startedAt := time.Now()
 
+		// Use the parent context for the actual HTTP request.
+		// Stage expiration must not cancel an in-flight request.
 		response, err := client.do(
-			ctx,
+			requestCtx,
 			target.method,
 			target.path,
 			nil,
@@ -217,12 +251,14 @@ func runWorkloadWorker(
 
 		duration := time.Since(startedAt)
 
-		// Do not count requests interrupted by the stage deadline
-		// or by cancellation of the parent context.
-		if ctx.Err() != nil {
+		// If the parent context was cancelled, distinguish this
+		// from an unexpected transport error.
+		if err != nil && requestCtx.Err() != nil {
+			stats.recordCancellation(duration)
 			return
 		}
 
+		// Record every completed request, including HTTP 4xx and 5xx.
 		stats.record(response.StatusCode, err, duration)
 	}
 }
@@ -247,7 +283,8 @@ func (s *workloadStats) record(
 
 	s.statusCodes[statusCode]++
 
-	if statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices {
+	if statusCode >= http.StatusOK &&
+		statusCode < http.StatusMultipleChoices {
 		s.successful++
 		return
 	}
@@ -255,11 +292,22 @@ func (s *workloadStats) record(
 	s.failed++
 }
 
+func (s *workloadStats) recordCancellation(duration time.Duration) {
+	s.requests++
+	s.cancelledRequests++
+	s.totalLatency += duration
+
+	if duration > s.maxLatency {
+		s.maxLatency = duration
+	}
+}
+
 func (s *workloadStats) add(other workloadStats) {
 	s.requests += other.requests
 	s.successful += other.successful
 	s.failed += other.failed
 	s.transportErrors += other.transportErrors
+	s.cancelledRequests += other.cancelledRequests
 	s.totalLatency += other.totalLatency
 
 	if other.maxLatency > s.maxLatency {
@@ -274,13 +322,14 @@ func (s *workloadStats) add(other workloadStats) {
 func printWorkloadStage(
 	stageNumber int,
 	workerCount int,
-	elapsed time.Duration,
+	loadDuration time.Duration,
+	drainDuration time.Duration,
 	stats workloadStats,
 ) {
 	var requestsPerSecond float64
 
-	if elapsed > 0 {
-		requestsPerSecond = float64(stats.requests) / elapsed.Seconds()
+	if loadDuration > 0 {
+		requestsPerSecond = float64(stats.requests) / loadDuration.Seconds()
 	}
 
 	var averageLatency time.Duration
@@ -290,14 +339,16 @@ func printWorkloadStage(
 	}
 
 	fmt.Printf(
-		"Stage %d complete: workers=%d, duration=%s, requests=%d, successful=%d, failed=%d, transport_errors=%d, rps=%.1f, avg_latency=%s, max_latency=%s, statuses={%s}\n",
+		"Stage %d complete: workers=%d, load_duration=%s, drain_duration=%s, requests=%d, successful=%d, failed=%d, transport_errors=%d, cancelled=%d, rps=%.1f, avg_latency=%s, max_latency=%s, statuses={%s}\n",
 		stageNumber,
 		workerCount,
-		elapsed.Round(time.Millisecond),
+		loadDuration.Round(time.Millisecond),
+		drainDuration.Round(time.Millisecond),
 		stats.requests,
 		stats.successful,
 		stats.failed,
 		stats.transportErrors,
+		stats.cancelledRequests,
 		requestsPerSecond,
 		averageLatency.Round(time.Microsecond),
 		stats.maxLatency.Round(time.Microsecond),
