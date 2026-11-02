@@ -205,6 +205,9 @@ test-e2e-api:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
 
+test-observability:
+	go run ./tests/e2e/observability
+
 
 # =====================================================
 # Observability
