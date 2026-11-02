@@ -80,9 +80,24 @@ func (o *Observability) InstrumentHTTPRoute(
 	operation := fmt.Sprintf("%s %s", method, path)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The API version prefix is stripped before the nested ServeMux matches.
-		// Restore the externally visible route template for OpenTelemetry.
 		r.Pattern = path
+
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+
+		ctx := r.Context()
+
+		attributes := metric.WithAttributes(
+			attribute.String("http.request.method", method),
+			attribute.String("http.route", path),
+			attribute.String("url.scheme", scheme),
+		)
+
+		o.activeRequests.Add(ctx, 1, attributes)
+		defer o.activeRequests.Add(ctx, -1, attributes)
+
 		next.ServeHTTP(w, r)
 	})
 
@@ -98,8 +113,9 @@ func (o *Observability) MeterProvider() metric.MeterProvider {
 	return o.meterProvider
 }
 
+// ActiveRequestsCounter returns the active requests counter.
 func (o *Observability) ActiveRequestsCounter() metric.Int64UpDownCounter {
-    return o.activeRequests
+	return o.activeRequests
 }
 
 func (o *Observability) Shutdown(ctx context.Context) error {
