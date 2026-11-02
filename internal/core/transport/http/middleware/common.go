@@ -7,6 +7,8 @@ import (
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -112,6 +114,31 @@ func Panic() Middleware {
 					)
 				}
 			}()
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func InstrumentActiveRequests(
+	counter metric.Int64UpDownCounter,
+) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
+			scheme := "http"
+			if r.TLS != nil {
+				scheme = "https"
+			}
+
+			attributes := metric.WithAttributes(
+				attribute.String("http.request.method", r.Method),
+				attribute.String("url.scheme", scheme),
+			)
+
+			counter.Add(ctx, 1, attributes)
+			defer counter.Add(ctx, -1, attributes)
 
 			next.ServeHTTP(w, r)
 		})

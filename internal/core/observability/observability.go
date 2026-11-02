@@ -14,7 +14,8 @@ import (
 )
 
 type Observability struct {
-	meterProvider *sdkmetric.MeterProvider
+	meterProvider  *sdkmetric.MeterProvider
+	activeRequests metric.Int64UpDownCounter
 }
 
 func New(ctx context.Context, config Config) (*Observability, error) {
@@ -48,8 +49,24 @@ func New(ctx context.Context, config Config) (*Observability, error) {
 		sdkmetric.WithReader(reader),
 	)
 
+	meter := meterProvider.Meter(
+		"github.com/Reigor1/20h-project/internal/core/observability",
+	)
+
+	activeRequests, err := meter.Int64UpDownCounter(
+		"http.server.active_requests",
+		metric.WithDescription("Number of active HTTP server requests."),
+		metric.WithUnit("{request}"),
+	)
+	if err != nil {
+		_ = meterProvider.Shutdown(ctx)
+
+		return nil, fmt.Errorf("create active requests metric: %w", err)
+	}
+
 	return &Observability{
-		meterProvider: meterProvider,
+		meterProvider:  meterProvider,
+		activeRequests: activeRequests,
 	}, nil
 }
 
@@ -79,6 +96,10 @@ func (o *Observability) InstrumentHTTPRoute(
 // MeterProvider exposes the SDK provider for additional metric collectors.
 func (o *Observability) MeterProvider() metric.MeterProvider {
 	return o.meterProvider
+}
+
+func (o *Observability) ActiveRequestsCounter() metric.Int64UpDownCounter {
+    return o.activeRequests
 }
 
 func (o *Observability) Shutdown(ctx context.Context) error {
