@@ -2,29 +2,32 @@ package core_observability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Observability struct {
 	meterProvider  *sdkmetric.MeterProvider
+	tracerProvider *sdktrace.TracerProvider
+	propagators    propagation.TextMapPropagator
+
 	activeRequests metric.Int64UpDownCounter
 }
 
 func New(ctx context.Context, config Config) (*Observability, error) {
 	config = config.withDefaults()
-
-	exporter, err := otlpmetrichttp.New(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create OTLP metrics exporter: %w", err)
-	}
 
 	res, err := resource.New(
 		ctx,
@@ -35,12 +38,27 @@ func New(ctx context.Context, config Config) (*Observability, error) {
 		resource.WithFromEnv(),
 	)
 	if err != nil {
-		_ = exporter.Shutdown(ctx)
 		return nil, fmt.Errorf("create telemetry resource: %w", err)
 	}
 
+	traceExporter, err := otlptracehttp.New(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create OTLP trace exporter: %w", err)
+	}
+
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithResource(res),
+		sdktrace.WithBatcher(traceExporter),
+	)
+
+	metricExporter, err := otlpmetrichttp.New(ctx)
+	if err != nil {
+		_ = tracerProvider.Shutdown(ctx)
+		return nil, fmt.Errorf("create OTLP metrics exporter: %w", err)
+	}
+
 	reader := sdkmetric.NewPeriodicReader(
-		exporter,
+		metricExporter,
 		sdkmetric.WithInterval(config.MetricsExportInterval),
 	)
 
@@ -60,12 +78,20 @@ func New(ctx context.Context, config Config) (*Observability, error) {
 	)
 	if err != nil {
 		_ = meterProvider.Shutdown(ctx)
+		_ = tracerProvider.Shutdown(ctx)
 
 		return nil, fmt.Errorf("create active requests metric: %w", err)
 	}
 
+	propagators := propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
+
 	return &Observability{
 		meterProvider:  meterProvider,
+		tracerProvider: tracerProvider,
+		propagators:    propagators,
 		activeRequests: activeRequests,
 	}, nil
 }
@@ -104,8 +130,15 @@ func (o *Observability) InstrumentHTTPRoute(
 	return otelhttp.NewHandler(
 		handler,
 		operation,
+		otelhttp.WithTracerProvider(o.tracerProvider),
+		otelhttp.WithPropagators(o.propagators),
 		otelhttp.WithMeterProvider(o.meterProvider),
 	)
+}
+
+// TracerProvider exposes the SDK provider for tracing integrations.
+func (o *Observability) TracerProvider() trace.TracerProvider {
+	return o.tracerProvider
 }
 
 // MeterProvider exposes the SDK provider for additional metric collectors.
@@ -119,13 +152,29 @@ func (o *Observability) ActiveRequestsCounter() metric.Int64UpDownCounter {
 }
 
 func (o *Observability) Shutdown(ctx context.Context) error {
-	if o == nil || o.meterProvider == nil {
+	if o == nil {
 		return nil
 	}
 
-	if err := o.meterProvider.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown meter provider: %w", err)
+	var shutdownErr error
+
+	if o.tracerProvider != nil {
+		if err := o.tracerProvider.Shutdown(ctx); err != nil {
+			shutdownErr = errors.Join(
+				shutdownErr,
+				fmt.Errorf("shutdown tracer provider: %w", err),
+			)
+		}
 	}
 
-	return nil
+	if o.meterProvider != nil {
+		if err := o.meterProvider.Shutdown(ctx); err != nil {
+			shutdownErr = errors.Join(
+				shutdownErr,
+				fmt.Errorf("shutdown meter provider: %w", err),
+			)
+		}
+	}
+
+	return shutdownErr
 }

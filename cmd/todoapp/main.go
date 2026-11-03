@@ -92,6 +92,9 @@ func main() {
 	logger.Debug("initializing pgx tracer")
 
 	pgxTracer := otelpgx.NewTracer(
+		otelpgx.WithTracerProvider(
+			observability.TracerProvider(),
+		),
 		otelpgx.WithMeterProvider(
 			observability.MeterProvider(),
 		),
