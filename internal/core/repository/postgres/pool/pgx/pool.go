@@ -6,6 +6,7 @@ import (
 	"time"
 
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,6 +18,7 @@ type Pool struct {
 func NewPool(
 	ctx context.Context,
 	config Config,
+	tracer pgx.QueryTracer,
 ) (*Pool, error) {
 	connectionString := fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
@@ -32,12 +34,15 @@ func NewPool(
 		return nil, fmt.Errorf("parse pgxConfig: %w", err)
 	}
 
+	pgxConfig.ConnConfig.Tracer = tracer
+
 	pool, err := pgxpool.NewWithConfig(ctx, pgxConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create pgxpool: %w", err)
 	}
 
 	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("pgxpool ping: %w", err)
 	}
 

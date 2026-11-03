@@ -24,6 +24,8 @@ import (
 	users_postgres_repository "github.com/Reigor1/20h-project/internal/features/users/repository/postgres"
 	users_service "github.com/Reigor1/20h-project/internal/features/users/service"
 	users_transport_http "github.com/Reigor1/20h-project/internal/features/users/transport/http"
+	"github.com/exaring/otelpgx"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
 	_ "github.com/Reigor1/20h-project/docs"
@@ -54,17 +56,6 @@ func main() {
 
 	logger.Debug("application time zone", zap.Any("zone", time.Local))
 
-	logger.Debug("initializing postgres connection pool")
-
-	pool, err := core_pgx_pool.NewPool(
-		ctx,
-		core_pgx_pool.NewConfigMust(),
-	)
-	if err != nil {
-		logger.Fatal("failed to init postgres connection pool", zap.Error(err))
-	}
-	defer pool.Close()
-
 	logger.Debug("initializing observability")
 
 	observability, err := core_observability.New(
@@ -76,6 +67,12 @@ func main() {
 	if err != nil {
 		logger.Fatal("failed to init observability", zap.Error(err))
 	}
+
+	// Observability owns the MeterProvider and its registrations.
+	// Shutdown it before closing the pool so the final metric collection
+	// can still read pgxpool.Stat().
+	var pool *core_pgx_pool.Pool
+
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(
 			context.Background(),
@@ -86,22 +83,62 @@ func main() {
 		if err := observability.Shutdown(shutdownCtx); err != nil {
 			logger.Error("failed to shutdown observability", zap.Error(err))
 		}
+
+		if pool != nil {
+			pool.Close()
+		}
 	}()
+
+	logger.Debug("initializing pgx tracer")
+
+	pgxTracer := otelpgx.NewTracer(
+		otelpgx.WithMeterProvider(
+			observability.MeterProvider(),
+		),
+		otelpgx.WithMetricOperationName(
+			otelpgx.SQLOperationName,
+		),
+		otelpgx.WithMeterAttributes(
+			attribute.String(
+				"db.client.connection.pool.name",
+				"primary",
+			),
+		),
+		otelpgx.WithTracerAttributes(
+			attribute.String(
+				"db.client.connection.pool.name",
+				"primary",
+			),
+		),
+		otelpgx.WithDisableSQLStatementInAttributes(),
+		otelpgx.WithDisableConnectionDetailsInAttributes(),
+	)
+
+	logger.Debug("initializing postgres connection pool")
+
+	pool, err = core_pgx_pool.NewPool(
+		ctx,
+		core_pgx_pool.NewConfigMust(),
+		pgxTracer,
+	)
+	if err != nil {
+		logger.Fatal(
+			"failed to init postgres connection pool",
+			zap.Error(err),
+		)
+	}
 
 	logger.Debug("initializing postgres pool metrics")
 
-	poolMetrics, err := core_observability_postgres.RegisterPoolMetrics(
+	if err := core_observability_postgres.RegisterPoolMetrics(
 		observability.MeterProvider(),
 		pool,
-	)
-	if err != nil {
-		logger.Fatal("failed to init postgres pool metrics", zap.Error(err))
+	); err != nil {
+		logger.Fatal(
+			"failed to init postgres pool metrics",
+			zap.Error(err),
+		)
 	}
-	defer func() {
-		if err := poolMetrics.Shutdown(); err != nil {
-			logger.Error("failed to shutdown postgres pool metrics", zap.Error(err))
-		}
-	}()
 
 	logger.Debug("initializing feature", zap.String("feature", "users"))
 	usersRepository := users_postgres_repository.NewUsersRepository(pool)
@@ -131,7 +168,7 @@ func main() {
 	httpServer.RegisterAPIRouteInstrumenter(observability.InstrumentHTTPRoute)
 
 	apiVersionRouter1 := core_http_server.NewAPIVersionRouter(
-core_http_server.ApiVersion1,
+		core_http_server.ApiVersion1,
 	)
 	apiVersionRouter1.RegisterRouts(usersTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(tasksTransportHTTP.Routes()...)
@@ -149,6 +186,13 @@ core_http_server.ApiVersion1,
 		// apiVersionRouter2,
 	)
 	httpServer.RegisterSwagger()
+
+	logger.Info(
+		"observability dashboards",
+		zap.String("prometheus_url", "http://localhost:9090/graph"),
+		zap.String("grafana_url", "http://localhost:3000"),
+		zap.String("swagger_url", "http://127.0.0.1:5050/swagger/index.html"),
+	)
 
 	if err := httpServer.Run(ctx); err != nil {
 		logger.Error("HTTP server run error", zap.Error(err))
