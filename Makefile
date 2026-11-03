@@ -206,7 +206,7 @@ test-e2e-api:
 		exit $$test_status
 
 test-observability:
-	go run ./tests/e2e/observability
+	@go run ./tests/e2e/observability
 
 
 # =====================================================
@@ -215,6 +215,7 @@ test-observability:
 
 # Start all observability services in dependency order.
 observability-up:
+	@$(MAKE) tempo-up
 	@$(MAKE) otel-collector-up
 	@$(MAKE) prometheus-up
 	@$(MAKE) grafana-up
@@ -224,30 +225,39 @@ observability-down:
 	@$(MAKE) grafana-down
 	@$(MAKE) prometheus-down
 	@$(MAKE) otel-collector-down
+	@$(MAKE) tempo-down
+
+# Start Tempo.
+tempo-up:
+	@docker compose up -d tempo
+
+# Stop Tempo.
+tempo-down:
+	@docker compose stop tempo
 
 # Start OpenTelemetry Collector.
 otel-collector-up:
-	docker compose up -d otel-collector
+	@docker compose up -d otel-collector
 
 # Stop OpenTelemetry Collector.
 otel-collector-down:
-	docker compose stop otel-collector
+	@docker compose stop otel-collector
 
 # Start Prometheus.
 prometheus-up:
-	docker compose up -d prometheus
+	@docker compose up -d prometheus
 
 # Stop Prometheus.
 prometheus-down:
-	docker compose stop prometheus
+	@docker compose stop prometheus
 
 # Start Grafana.
 grafana-up:
-	docker compose up -d grafana
+	@docker compose up -d grafana
 
 # Stop Grafana.
 grafana-down:
-	docker compose stop grafana
+	@docker compose stop grafana
 
 
 # =====================================================
