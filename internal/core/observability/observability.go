@@ -29,16 +29,9 @@ type Observability struct {
 func New(ctx context.Context, config Config) (*Observability, error) {
 	config = config.withDefaults()
 
-	res, err := resource.New(
-		ctx,
-		resource.WithTelemetrySDK(),
-		resource.WithAttributes(
-			attribute.String("service.name", config.ServiceName),
-		),
-		resource.WithFromEnv(),
-	)
+	res, err := newResource(ctx, config)
 	if err != nil {
-		return nil, fmt.Errorf("create telemetry resource: %w", err)
+		return nil, err
 	}
 
 	traceExporter, err := otlptracehttp.New(ctx)
@@ -94,6 +87,30 @@ func New(ctx context.Context, config Config) (*Observability, error) {
 		propagators:    propagators,
 		activeRequests: activeRequests,
 	}, nil
+}
+
+func newResource(
+	ctx context.Context,
+	config Config,
+) (*resource.Resource, error) {
+	res, err := resource.New(
+		ctx,
+		resource.WithTelemetrySDK(),
+		resource.WithFromEnv(),
+		resource.WithAttributes(
+			attribute.String("service.name", config.ServiceName),
+			attribute.String("service.version", config.ServiceVersion),
+			attribute.String(
+				"deployment.environment.name",
+				config.DeploymentEnvironment,
+			),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create telemetry resource: %w", err)
+	}
+
+	return res, nil
 }
 
 // InstrumentHTTPRoute instruments one registered business API route.

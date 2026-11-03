@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -31,26 +32,33 @@ import (
 	_ "github.com/Reigor1/20h-project/docs"
 )
 
-// @Title 		 Golang Todo API
-// @Version 	 1.0
+// @Title        Golang Todo API
+// @Version      1.0
 // @Description  Todo Application REST-API scheme
 // @Description  `Перед работой помолитесь Богу машины`
-// @Host 		 127.0.0.1:5050
-// @BasePath 	 /api/v1
+// @Host         127.0.0.1:5050
+// @BasePath     /api/v1
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "application failed:", err)
+		os.Exit(1)
+	}
+}
+
+func run() (runErr error) {
 	cfg := core_config.NewConfigMust()
 	time.Local = cfg.TimeZone
 
 	ctx, cancel := signal.NotifyContext(
 		context.Background(),
-		syscall.SIGINT, syscall.SIGTERM,
+		syscall.SIGINT,
+		syscall.SIGTERM,
 	)
 	defer cancel()
 
 	logger, err := core_logger.NewLogger(core_logger.NewConfigMust())
 	if err != nil {
-		fmt.Println("failed to init application logger:", err)
-		os.Exit(1)
+		return fmt.Errorf("init application logger: %w", err)
 	}
 	defer logger.Close()
 
@@ -65,7 +73,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatal("failed to init observability", zap.Error(err))
+		return fmt.Errorf("init observability: %w", err)
 	}
 
 	// Observability owns the MeterProvider and its registrations.
@@ -81,7 +89,10 @@ func main() {
 		defer shutdownCancel()
 
 		if err := observability.Shutdown(shutdownCtx); err != nil {
-			logger.Error("failed to shutdown observability", zap.Error(err))
+			runErr = errors.Join(
+				runErr,
+				fmt.Errorf("shutdown observability: %w", err),
+			)
 		}
 
 		if pool != nil {
@@ -91,30 +102,32 @@ func main() {
 
 	logger.Debug("initializing pgx tracer")
 
-	pgxTracer := otelpgx.NewTracer(
-		otelpgx.WithTracerProvider(
-			observability.TracerProvider(),
-		),
-		otelpgx.WithMeterProvider(
-			observability.MeterProvider(),
-		),
-		otelpgx.WithMetricOperationName(
-			otelpgx.SQLOperationName,
-		),
-		otelpgx.WithMeterAttributes(
-			attribute.String(
-				"db.client.connection.pool.name",
-				"primary",
+	pgxTracer := core_observability_postgres.NewSanitizingTracer(
+		otelpgx.NewTracer(
+			otelpgx.WithTracerProvider(
+				observability.TracerProvider(),
 			),
-		),
-		otelpgx.WithTracerAttributes(
-			attribute.String(
-				"db.client.connection.pool.name",
-				"primary",
+			otelpgx.WithMeterProvider(
+				observability.MeterProvider(),
 			),
+			otelpgx.WithMetricOperationName(
+				otelpgx.SQLOperationName,
+			),
+			otelpgx.WithMeterAttributes(
+				attribute.String(
+					"db.client.connection.pool.name",
+					"primary",
+				),
+			),
+			otelpgx.WithTracerAttributes(
+				attribute.String(
+					"db.client.connection.pool.name",
+					"primary",
+				),
+			),
+			otelpgx.WithDisableSQLStatementInAttributes(),
+			otelpgx.WithDisableConnectionDetailsInAttributes(),
 		),
-		otelpgx.WithDisableSQLStatementInAttributes(),
-		otelpgx.WithDisableConnectionDetailsInAttributes(),
 	)
 
 	logger.Debug("initializing postgres connection pool")
@@ -125,10 +138,7 @@ func main() {
 		pgxTracer,
 	)
 	if err != nil {
-		logger.Fatal(
-			"failed to init postgres connection pool",
-			zap.Error(err),
-		)
+		return fmt.Errorf("init PostgreSQL connection pool: %w", err)
 	}
 
 	logger.Debug("initializing postgres pool metrics")
@@ -137,28 +147,29 @@ func main() {
 		observability.MeterProvider(),
 		pool,
 	); err != nil {
-		logger.Fatal(
-			"failed to init postgres pool metrics",
-			zap.Error(err),
-		)
+		return fmt.Errorf("register PostgreSQL pool metrics: %w", err)
 	}
 
 	logger.Debug("initializing feature", zap.String("feature", "users"))
+
 	usersRepository := users_postgres_repository.NewUsersRepository(pool)
 	usersService := users_service.NewUsersService(usersRepository)
 	usersTransportHTTP := users_transport_http.NewUsersHTTPHandler(usersService)
 
 	logger.Debug("initializing feature", zap.String("feature", "tasks"))
+
 	tasksRepository := tasks_postgres_repository.NewTasksRepository(pool)
 	tasksService := tasks_service.NewTasksService(tasksRepository)
 	tasksTransportHTTP := tasks_transport_http.NewTasksHTTPHandler(tasksService)
 
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
+
 	statisticsRepository := statistics_postgres_repository.NewStatisticsRepository(pool)
 	statisticsService := statistics_service.NewStatisticsService(statisticsRepository)
 	statisticsTransportHTTP := statistics_transport_http.NewStatisticsHTTPHandler(statisticsService)
 
 	logger.Debug("initializing HTTP server")
+
 	httpServer := core_http_server.NewHTTPServer(
 		core_http_server.NewConfigMust(),
 		logger,
@@ -177,7 +188,7 @@ func main() {
 	apiVersionRouter1.RegisterRouts(tasksTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(statisticsTransportHTTP.Routes()...)
 
-	// Example of usage apiVersionRouter2 with dummy middleware
+	// Example of usage apiVersionRouter2 with dummy middleware.
 	// apiVersionRouter2 := core_http_server.NewAPIVersionRouter(
 	// 	core_http_server.ApiVersion2,
 	// 	core_http_middleware.Dummy("api v2 middleware"),
@@ -198,6 +209,8 @@ func main() {
 	)
 
 	if err := httpServer.Run(ctx); err != nil {
-		logger.Error("HTTP server run error", zap.Error(err))
+		return fmt.Errorf("run HTTP server: %w", err)
 	}
+
+	return nil
 }

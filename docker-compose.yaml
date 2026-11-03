@@ -14,6 +14,8 @@ services:
       - POSTGRES_TIMEOUT=${POSTGRES_TIMEOUT}
       - LOGGER_LEVEL=${LOGGER_LEVEL}
       - TIME_ZONE=${TIME_ZONE}
+      - SERVICE_VERSION=${SERVICE_VERSION:-dev}
+      - DEPLOYMENT_ENVIRONMENT=${DEPLOYMENT_ENVIRONMENT:-development}
       - LOGGER_FOLDER=/app/out/logs
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     volumes:
