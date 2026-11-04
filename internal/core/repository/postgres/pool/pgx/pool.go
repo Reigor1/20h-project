@@ -91,3 +91,13 @@ func (p *Pool) Exec(
 func (p *Pool) OpTimeout() time.Duration {
 	return p.opTimeout
 }
+
+// Close closes the PostgreSQL connection pool.
+// It blocks until all acquired connections are returned and closed.
+func (p *Pool) Close() {
+	if p == nil || p.Pool == nil {
+		return
+	}
+
+	p.Pool.Close()
+}

@@ -1,4 +1,10 @@
+
 services:
+
+  # =====================================================
+  # Application
+  # =====================================================
+
   todoapp:
     build:
       context: ${PROJECT_ROOT}
@@ -23,8 +29,21 @@ services:
     ports:
       - "5050:5050"
     depends_on:
-      - otel-collector
+      todoapp-postgres:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    stop_grace_period: 1m
     restart: always
+
+
+  # =====================================================
+  # Database
+  # =====================================================
+
+  # ----------------------------
+  # PostgreSQL
+  # ----------------------------
 
   todoapp-postgres:
     image: postgres:18.1-bookworm
@@ -37,10 +56,21 @@ services:
       - ${PROJECT_ROOT}/out/pgdata:/var/lib/postgresql
     restart: always
 
+  # ----------------------------
+  # Database Migrations
+  # ----------------------------
+
   todoapp-postgres-migrate:
     image: migrate/migrate:v4.19.1
     volumes:
       - ${PROJECT_ROOT}/migrations:/migrations
+    depends_on:
+      todoapp-postgres:
+        condition: service_started
+
+  # ----------------------------
+  # Local Database Access
+  # ----------------------------
 
   port-forwarder:
     image: alpine/socat:1.8.0.3
@@ -48,6 +78,14 @@ services:
     command: tcp-listen:5432,fork,reuseaddr tcp-connect:todoapp-postgres:5432
     ports:
       - "127.0.0.1:5432:5432"
+    depends_on:
+      todoapp-postgres:
+        condition: service_started
+
+
+  # =====================================================
+  # API Documentation
+  # =====================================================
 
   swagger:
     build:
@@ -61,9 +99,15 @@ services:
     volumes:
       - ${PROJECT_ROOT}:/code
 
+
   # =====================================================
   # Observability
   # =====================================================
+
+  # ----------------------------
+  # OpenTelemetry Collector
+  # ----------------------------
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.164.0
     container_name: todoapp-otel-collector
@@ -73,7 +117,14 @@ services:
       - ${PROJECT_ROOT}/monitoring/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
       - "127.0.0.1:4318:4318"
+    depends_on:
+      tempo:
+        condition: service_started
     restart: unless-stopped
+
+  # ----------------------------
+  # Metrics Collection
+  # ----------------------------
 
   prometheus:
     image: prom/prometheus:v3.15.1
@@ -88,8 +139,13 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     depends_on:
-      - otel-collector
+      otel-collector:
+        condition: service_started
     restart: unless-stopped
+
+  # ----------------------------
+  # Visualization
+  # ----------------------------
 
   grafana:
     image: grafana/grafana:13.3.0
@@ -106,8 +162,13 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
     restart: unless-stopped
+
+  # ----------------------------
+  # Distributed Tracing
+  # ----------------------------
 
   tempo:
     image: grafana/tempo:3.1.1
@@ -121,4 +182,3 @@ services:
     ports:
       - "127.0.0.1:3200:3200"
     restart: unless-stopped
-

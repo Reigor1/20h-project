@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
@@ -46,8 +47,13 @@ func New(ctx context.Context, config Config) (*Observability, error) {
 
 	metricExporter, err := otlpmetrichttp.New(ctx)
 	if err != nil {
-		_ = tracerProvider.Shutdown(ctx)
-		return nil, fmt.Errorf("create OTLP metrics exporter: %w", err)
+		return nil, errors.Join(
+			fmt.Errorf("create OTLP metrics exporter: %w", err),
+			shutdownProvidersAfterInitializationFailure(
+				tracerProvider,
+				nil,
+			),
+		)
 	}
 
 	reader := sdkmetric.NewPeriodicReader(
@@ -70,10 +76,13 @@ func New(ctx context.Context, config Config) (*Observability, error) {
 		metric.WithUnit("{request}"),
 	)
 	if err != nil {
-		_ = meterProvider.Shutdown(ctx)
-		_ = tracerProvider.Shutdown(ctx)
-
-		return nil, fmt.Errorf("create active requests metric: %w", err)
+		return nil, errors.Join(
+			fmt.Errorf("create active requests metric: %w", err),
+			shutdownProvidersAfterInitializationFailure(
+				tracerProvider,
+				meterProvider,
+			),
+		)
 	}
 
 	propagators := propagation.NewCompositeTextMapPropagator(
@@ -173,10 +182,24 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 		return nil
 	}
 
+	return shutdownProviders(
+		ctx,
+		o.tracerProvider,
+		o.meterProvider,
+	)
+}
+
+const providerInitializationCleanupTimeout = 5 * time.Second
+
+func shutdownProviders(
+	ctx context.Context,
+	tracerProvider *sdktrace.TracerProvider,
+	meterProvider *sdkmetric.MeterProvider,
+) error {
 	var shutdownErr error
 
-	if o.tracerProvider != nil {
-		if err := o.tracerProvider.Shutdown(ctx); err != nil {
+	if tracerProvider != nil {
+		if err := tracerProvider.Shutdown(ctx); err != nil {
 			shutdownErr = errors.Join(
 				shutdownErr,
 				fmt.Errorf("shutdown tracer provider: %w", err),
@@ -184,8 +207,8 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	if o.meterProvider != nil {
-		if err := o.meterProvider.Shutdown(ctx); err != nil {
+	if meterProvider != nil {
+		if err := meterProvider.Shutdown(ctx); err != nil {
 			shutdownErr = errors.Join(
 				shutdownErr,
 				fmt.Errorf("shutdown meter provider: %w", err),
@@ -194,4 +217,17 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 	}
 
 	return shutdownErr
+}
+
+func shutdownProvidersAfterInitializationFailure(
+	tracerProvider *sdktrace.TracerProvider,
+	meterProvider *sdkmetric.MeterProvider,
+) error {
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		providerInitializationCleanupTimeout,
+	)
+	defer cancel()
+
+	return shutdownProviders(ctx, tracerProvider, meterProvider)
 }

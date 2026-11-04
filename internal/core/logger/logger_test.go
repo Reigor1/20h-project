@@ -20,7 +20,11 @@ func TestNewLoggerCreatesLogFileAndWritesMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLogger() error = %v, want nil", err)
 	}
-	t.Cleanup(logger.Close)
+	t.Cleanup(func() {
+		if err := logger.Close(); err != nil {
+			t.Errorf("close logger: %v", err)
+		}
+	})
 
 	logger.Info("test log message")
 	if err := logger.Sync(); err != nil {
@@ -93,7 +97,11 @@ func TestWithWritesMessageAndAdditionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLogger() error = %v, want nil", err)
 	}
-	t.Cleanup(logger.Close)
+	t.Cleanup(func() {
+		if err := logger.Close(); err != nil {
+			t.Errorf("close logger: %v", err)
+		}
+	})
 
 	derivedLogger := logger.With(zap.String("request_id", "request-123"))
 	derivedLogger.Info("message from derived logger")

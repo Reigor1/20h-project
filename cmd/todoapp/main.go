@@ -60,7 +60,15 @@ func run() (runErr error) {
 	if err != nil {
 		return fmt.Errorf("init application logger: %w", err)
 	}
-	defer logger.Close()
+
+	defer func() {
+		if err := logger.Close(); err != nil {
+			runErr = errors.Join(
+				runErr,
+				fmt.Errorf("close application logger: %w", err),
+			)
+		}
+	}()
 
 	logger.Debug("application time zone", zap.Any("zone", time.Local))
 
@@ -69,7 +77,9 @@ func run() (runErr error) {
 	observability, err := core_observability.New(
 		ctx,
 		core_observability.Config{
-			ServiceName: "20h-project",
+			ServiceName:           "20h-project",
+			ServiceVersion:        os.Getenv("SERVICE_VERSION"),
+			DeploymentEnvironment: os.Getenv("DEPLOYMENT_ENVIRONMENT"),
 		},
 	)
 	if err != nil {
@@ -82,6 +92,9 @@ func run() (runErr error) {
 	var pool *core_pgx_pool.Pool
 
 	defer func() {
+		// Stop application work before shutting down its dependencies.
+		cancel()
+
 		shutdownCtx, shutdownCancel := context.WithTimeout(
 			context.Background(),
 			5*time.Second,
@@ -95,6 +108,7 @@ func run() (runErr error) {
 			)
 		}
 
+		// pgxpool.Close() waits until all acquired connections are returned.
 		if pool != nil {
 			pool.Close()
 		}
@@ -179,19 +193,21 @@ func run() (runErr error) {
 		core_http_middleware.Trace(),
 		core_http_middleware.Panic(),
 	)
+
 	httpServer.RegisterAPIRouteInstrumenter(observability.InstrumentHTTPRoute)
 
 	apiVersionRouter1 := core_http_server.NewAPIVersionRouter(
 		core_http_server.ApiVersion1,
 	)
+
 	apiVersionRouter1.RegisterRouts(usersTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(tasksTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(statisticsTransportHTTP.Routes()...)
 
 	// Example of usage apiVersionRouter2 with dummy middleware.
 	// apiVersionRouter2 := core_http_server.NewAPIVersionRouter(
-	// 	core_http_server.ApiVersion2,
-	// 	core_http_middleware.Dummy("api v2 middleware"),
+	//     core_http_server.ApiVersion2,
+	//     core_http_middleware.Dummy("api v2 middleware"),
 	// )
 	// apiVersionRouter2.RegisterRouts(usersTransportHTTP.Routes()...)
 
@@ -199,6 +215,7 @@ func run() (runErr error) {
 		apiVersionRouter1,
 		// apiVersionRouter2,
 	)
+
 	httpServer.RegisterSwagger()
 
 	logger.Info(
