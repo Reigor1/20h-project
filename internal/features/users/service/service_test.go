@@ -8,6 +8,7 @@ import (
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 type usersRepositoryStub struct {
@@ -139,10 +140,9 @@ func TestCreateUser(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectCreateUser = true
 	repository.createUserResult = createdUser
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	got, err := service.CreateUser(context.Background(), inputUser)
-
 	if err != nil {
 		t.Fatalf("CreateUser() error = %v, want nil", err)
 	}
@@ -161,7 +161,7 @@ func TestCreateUser(t *testing.T) {
 
 func TestCreateUserRejectsInvalidUser(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 	invalidUser := domain.NewUserUninitialized("Al", nil)
 
 	got, err := service.CreateUser(context.Background(), invalidUser)
@@ -182,7 +182,7 @@ func TestCreateUserReturnsRepositoryError(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectCreateUser = true
 	repository.createUserError = repositoryError
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 	inputUser := domain.NewUserUninitialized("Ada Lovelace", nil)
 
 	_, err := service.CreateUser(context.Background(), inputUser)
@@ -200,10 +200,9 @@ func TestGetUser(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectGetUser = true
 	repository.getUserResult = wantUser
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	got, err := service.GetUser(context.Background(), 42)
-
 	if err != nil {
 		t.Fatalf("GetUser() error = %v, want nil", err)
 	}
@@ -220,7 +219,7 @@ func TestGetUserReturnsRepositoryError(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectGetUser = true
 	repository.getUserError = repositoryError
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	_, err := service.GetUser(context.Background(), 42)
 
@@ -242,10 +241,9 @@ func TestGetUsersPassesPaginationToRepository(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectGetUsers = true
 	repository.getUsersResult = wantUsers
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	got, err := service.GetUsers(context.Background(), &limit, &offset)
-
 	if err != nil {
 		t.Fatalf("GetUsers() error = %v, want nil", err)
 	}
@@ -268,10 +266,9 @@ func TestGetUsersAllowsUnsetPagination(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectGetUsers = true
 	repository.getUsersResult = []domain.User{}
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	got, err := service.GetUsers(context.Background(), nil, nil)
-
 	if err != nil {
 		t.Fatalf("GetUsers() error = %v, want nil", err)
 	}
@@ -308,7 +305,7 @@ func TestGetUsersRejectsNegativePagination(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			repository := newUsersRepositoryStub(t)
-			service := NewUsersService(repository)
+			service := newUsersServiceForTest(repository)
 
 			got, err := service.GetUsers(context.Background(), testCase.limit, testCase.offset)
 
@@ -330,7 +327,7 @@ func TestGetUsersReturnsRepositoryError(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectGetUsers = true
 	repository.getUsersError = repositoryError
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	_, err := service.GetUsers(context.Background(), nil, nil)
 
@@ -357,10 +354,9 @@ func TestPatchUserAppliesPatchBeforeRepositoryUpdate(t *testing.T) {
 	repository.getUserResult = initialUser
 	repository.expectPatchUser = true
 	repository.patchUserResult = wantPatchedUser
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	got, err := service.PatchUser(context.Background(), 42, patch)
-
 	if err != nil {
 		t.Fatalf("PatchUser() error = %v, want nil", err)
 	}
@@ -386,7 +382,7 @@ func TestPatchUserReturnsGetErrorWithoutUpdating(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectGetUser = true
 	repository.getUserError = repositoryError
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	_, err := service.PatchUser(context.Background(), 42, domain.UserPatch{})
 
@@ -403,7 +399,7 @@ func TestPatchUserRejectsInvalidPatchWithoutUpdating(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectGetUser = true
 	repository.getUserResult = initialUser
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 	patch := domain.NewUserPatch(domain.Nullable[string]{Set: true}, domain.Nullable[string]{})
 
 	_, err := service.PatchUser(context.Background(), 42, patch)
@@ -424,7 +420,7 @@ func TestPatchUserReturnsRepositoryUpdateError(t *testing.T) {
 	repository.getUserResult = initialUser
 	repository.expectPatchUser = true
 	repository.patchUserError = repositoryError
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 	updatedFullName := "Grace Hopper"
 	patch := domain.NewUserPatch(
 		domain.Nullable[string]{Value: &updatedFullName, Set: true},
@@ -444,10 +440,9 @@ func TestPatchUserReturnsRepositoryUpdateError(t *testing.T) {
 func TestDeleteUser(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectDeleteUser = true
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	err := service.DeleteUser(context.Background(), 42)
-
 	if err != nil {
 		t.Fatalf("DeleteUser() error = %v, want nil", err)
 	}
@@ -461,7 +456,7 @@ func TestDeleteUserReturnsRepositoryError(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectDeleteUser = true
 	repository.deleteUserError = repositoryError
-	service := NewUsersService(repository)
+	service := newUsersServiceForTest(repository)
 
 	err := service.DeleteUser(context.Background(), 42)
 
@@ -471,4 +466,8 @@ func TestDeleteUserReturnsRepositoryError(t *testing.T) {
 	if repository.deleteUserCalls != 1 || repository.deleteUserID != 42 {
 		t.Fatalf("repository DeleteUser() calls/id = %d/%d, want 1/42", repository.deleteUserCalls, repository.deleteUserID)
 	}
+}
+
+func newUsersServiceForTest(repository UsersRepository) *UsersService {
+	return NewUsersService(repository, noop.NewTracerProvider())
 }

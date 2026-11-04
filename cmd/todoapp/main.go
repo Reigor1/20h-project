@@ -167,7 +167,10 @@ func run() (runErr error) {
 	logger.Debug("initializing feature", zap.String("feature", "users"))
 
 	usersRepository := users_postgres_repository.NewUsersRepository(pool)
-	usersService := users_service.NewUsersService(usersRepository)
+	usersService := users_service.NewUsersService(
+		usersRepository,
+		observability.TracerProvider(),
+	)
 	usersTransportHTTP := users_transport_http.NewUsersHTTPHandler(usersService)
 
 	logger.Debug("initializing feature", zap.String("feature", "tasks"))

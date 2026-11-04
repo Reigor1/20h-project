@@ -12,17 +12,23 @@ func (s *UsersService) PatchUser(
 	id int,
 	patch domain.UserPatch,
 ) (domain.User, error) {
+	ctx, span := s.tracer.Start(ctx, "users.update")
+	defer span.End()
+
 	user, err := s.usersRepository.GetUser(ctx, id)
 	if err != nil {
+		markSpanError(span, "users.update")
 		return domain.User{}, fmt.Errorf("get user: %w", err)
 	}
 
 	if err := user.ApplyPatch(patch); err != nil {
+		markSpanError(span, "users.update")
 		return domain.User{}, fmt.Errorf("apply patch: %w", err)
 	}
 
 	patchedUser, err := s.usersRepository.PatchUser(ctx, id, user)
 	if err != nil {
+		markSpanError(span, "users.update")
 		return domain.User{}, fmt.Errorf("patch user: %w", err)
 	}
 
