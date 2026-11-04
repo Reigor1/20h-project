@@ -5,14 +5,19 @@ import (
 	"fmt"
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
 func (s *TasksService) GetTask(
 	ctx context.Context,
 	id int,
 ) (domain.Task, error) {
+	ctx, span := s.tracer.Start(ctx, "tasks.get")
+	defer span.End()
+
 	task, err := s.tasksRepository.GetTask(ctx, id)
 	if err != nil {
+		core_observability.MarkSpanError(span, "tasks.get")
 		return domain.Task{}, fmt.Errorf("get task from repository: %w", err)
 	}
 

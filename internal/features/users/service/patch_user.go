@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
 func (s *UsersService) PatchUser(
@@ -17,18 +18,18 @@ func (s *UsersService) PatchUser(
 
 	user, err := s.usersRepository.GetUser(ctx, id)
 	if err != nil {
-		markSpanError(span, "users.update")
+		core_observability.MarkSpanError(span, "users.update")
 		return domain.User{}, fmt.Errorf("get user: %w", err)
 	}
 
 	if err := user.ApplyPatch(patch); err != nil {
-		markSpanError(span, "users.update")
+		core_observability.MarkSpanError(span, "users.update")
 		return domain.User{}, fmt.Errorf("apply patch: %w", err)
 	}
 
 	patchedUser, err := s.usersRepository.PatchUser(ctx, id, user)
 	if err != nil {
-		markSpanError(span, "users.update")
+		core_observability.MarkSpanError(span, "users.update")
 		return domain.User{}, fmt.Errorf("patch user: %w", err)
 	}
 

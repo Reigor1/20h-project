@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
 func (s *UsersService) GetUser(
@@ -16,7 +17,7 @@ func (s *UsersService) GetUser(
 
 	user, err := s.usersRepository.GetUser(ctx, id)
 	if err != nil {
-		markSpanError(span, "users.get")
+		core_observability.MarkSpanError(span, "users.get")
 		return domain.User{}, fmt.Errorf("get user from repository: %w", err)
 	}
 

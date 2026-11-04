@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
 func (s *UsersService) CreateUser(
@@ -15,13 +16,13 @@ func (s *UsersService) CreateUser(
 	defer span.End()
 
 	if err := user.Validate(); err != nil {
-		markSpanError(span, "users.create")
+		core_observability.MarkSpanError(span, "users.create")
 		return domain.User{}, fmt.Errorf("validate user domain: %w", err)
 	}
 
 	user, err := s.usersRepository.CreateUser(ctx, user)
 	if err != nil {
-		markSpanError(span, "users.create")
+		core_observability.MarkSpanError(span, "users.create")
 		return domain.User{}, fmt.Errorf("create user: %w", err)
 	}
 

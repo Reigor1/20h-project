@@ -3,6 +3,8 @@ package users_service
 import (
 	"context"
 	"fmt"
+
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
 func (s *UsersService) DeleteUser(
@@ -14,7 +16,7 @@ func (s *UsersService) DeleteUser(
 
 	err := s.usersRepository.DeleteUser(ctx, id)
 	if err != nil {
-		markSpanError(span, "users.delete")
+		core_observability.MarkSpanError(span, "users.delete")
 		return fmt.Errorf("delete user: %w", err)
 	}
 

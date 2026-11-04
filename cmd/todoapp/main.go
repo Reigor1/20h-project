@@ -176,7 +176,10 @@ func run() (runErr error) {
 	logger.Debug("initializing feature", zap.String("feature", "tasks"))
 
 	tasksRepository := tasks_postgres_repository.NewTasksRepository(pool)
-	tasksService := tasks_service.NewTasksService(tasksRepository)
+	tasksService := tasks_service.NewTasksService(
+		tasksRepository,
+		observability.TracerProvider(),
+	)
 	tasksTransportHTTP := tasks_transport_http.NewTasksHTTPHandler(tasksService)
 
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
