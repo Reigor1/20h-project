@@ -164,6 +164,8 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+      loki:
+        condition: service_started
     restart: unless-stopped
 
   # ----------------------------
@@ -181,4 +183,47 @@ services:
       - ${PROJECT_ROOT}/out/tempo:/var/tempo
     ports:
       - "127.0.0.1:3200:3200"
+    restart: unless-stopped
+
+  # ----------------------------
+  # Log Storage
+  # ----------------------------
+
+  loki:
+    image: grafana/loki:3.7.9
+    container_name: todoapp-loki
+    command:
+      - -target=all
+      - -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ${PROJECT_ROOT}/monitoring/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - ${PROJECT_ROOT}/out/loki:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    restart: unless-stopped
+
+  # ----------------------------
+  # Log Collection
+  # ----------------------------
+
+  alloy:
+    image: grafana/alloy:v1.21.3
+    container_name: todoapp-alloy
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      TIME_ZONE: ${TIME_ZONE:-UTC}
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
+    volumes:
+      - ${PROJECT_ROOT}/monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ${PROJECT_ROOT}/out/logs:/var/log/todoapp:ro
+      - ${PROJECT_ROOT}/out/alloy:/var/lib/alloy/data
+    ports:
+      - "127.0.0.1:12345:12345"
+    depends_on:
+      loki:
+        condition: service_started
     restart: unless-stopped

@@ -218,11 +218,15 @@ observability-up:
 	@$(MAKE) tempo-up
 	@$(MAKE) otel-collector-up
 	@$(MAKE) prometheus-up
+	@$(MAKE) loki-up
+	@$(MAKE) alloy-up
 	@$(MAKE) grafana-up
 
 # Stop all observability services in reverse startup order.
 observability-down:
 	@$(MAKE) grafana-down
+	@$(MAKE) alloy-down
+	@$(MAKE) loki-down
 	@$(MAKE) prometheus-down
 	@$(MAKE) otel-collector-down
 	@$(MAKE) tempo-down
@@ -250,6 +254,22 @@ prometheus-up:
 # Stop Prometheus.
 prometheus-down:
 	@docker compose stop prometheus
+
+# Start Loki.
+loki-up:
+	@docker compose up -d loki
+
+# Stop Loki.
+loki-down:
+	@docker compose stop loki
+
+# Start Grafana Alloy.
+alloy-up:
+	@docker compose up -d alloy
+
+# Stop Grafana Alloy.
+alloy-down:
+	@docker compose stop alloy
 
 # Start Grafana.
 grafana-up:
