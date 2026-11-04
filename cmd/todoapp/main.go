@@ -185,7 +185,10 @@ func run() (runErr error) {
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
 
 	statisticsRepository := statistics_postgres_repository.NewStatisticsRepository(pool)
-	statisticsService := statistics_service.NewStatisticsService(statisticsRepository)
+	statisticsService := statistics_service.NewStatisticsService(
+		statisticsRepository,
+		observability.TracerProvider(),
+	)
 	statisticsTransportHTTP := statistics_transport_http.NewStatisticsHTTPHandler(statisticsService)
 
 	logger.Debug("initializing HTTP server")
