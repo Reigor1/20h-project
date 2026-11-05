@@ -298,3 +298,13 @@ logs-cleanup:
 	else \
 		echo "Logs cleanup aborted."; \
 	fi
+
+# Restart one or more Docker Compose services.
+# Usage: make docker-restart SERVICES="alloy grafana"
+.PHONY: docker-restart
+docker-restart:
+	@if [ -z "$(strip $(SERVICES))" ]; then \
+		echo 'Usage: make docker-restart SERVICES="alloy grafana"'; \
+		exit 1; \
+	fi
+	@PROJECT_ROOT="$(PROJECT_ROOT)" docker compose restart $(SERVICES)

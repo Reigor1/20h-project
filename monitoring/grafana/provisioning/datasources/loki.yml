@@ -12,7 +12,8 @@ datasources:
       maxLines: 1000
       derivedFields:
         - name: TraceID
-          matcherRegex: 'trace_id=([0-9a-f]{32})'
+          matcherType: label
+          matcherRegex: trace_id
           datasourceUid: tempo
-          url: '$${__value.raw}'
-          urlDisplayLabel: 'Open Trace'
+          url: "$${__value.raw}"
+          urlDisplayLabel: "Open Trace"
