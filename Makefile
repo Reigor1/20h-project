@@ -148,7 +148,7 @@ test-integration-pgx:
 # Run HTTP server integration tests without external dependencies.
 test-integration-http:
 	@go test -count=1 -v -run \
-		'^TestRun(ServesRequestsAndShutsDownGracefully|ReturnsListenError)$$' \
+		'^TestRun(ServesRequestsAndShutsDownGracefully|ReturnsListenError|WaitsForInFlightRequestBeforeReturning)$$' \
 		${PROJECT_ROOT}/tests/integration/infrastructure
 
 # Run PostgreSQL users repository integration tests.

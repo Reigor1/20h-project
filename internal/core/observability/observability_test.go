@@ -2,10 +2,13 @@ package core_observability
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	core_observability_postgres "github.com/Reigor1/20h-project/internal/core/observability/postgres"
 	"github.com/exaring/otelpgx"
@@ -319,4 +322,117 @@ func findSpanAttribute(
 	}
 
 	return attribute.Value{}, false
+}
+
+func TestShutdownFlushesTracesAndMetrics(t *testing.T) {
+	var mu sync.Mutex
+
+	received := make(map[string]int)
+
+	otlpServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer r.Body.Close()
+
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "failed to read body", http.StatusInternalServerError)
+				return
+			}
+
+			if len(body) == 0 {
+				http.Error(w, "empty OTLP payload", http.StatusBadRequest)
+				return
+			}
+
+			mu.Lock()
+			received[r.URL.Path] += len(body)
+			mu.Unlock()
+
+			w.Header().Set("Content-Type", "application/x-protobuf")
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+
+	// Сначала регистрируем закрытие сервера.
+	t.Cleanup(otlpServer.Close)
+
+	t.Setenv(
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+		otlpServer.URL+"/v1/traces",
+	)
+
+	t.Setenv(
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+		otlpServer.URL+"/v1/metrics",
+	)
+
+	observability, err := New(
+		context.Background(),
+		Config{
+			MetricsExportInterval: time.Hour,
+		},
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	var shutdownOnce sync.Once
+	var shutdownErr error
+
+	shutdown := func() error {
+		shutdownOnce.Do(func() {
+			ctx, cancel := context.WithTimeout(
+				context.Background(),
+				5*time.Second,
+			)
+			defer cancel()
+
+			shutdownErr = observability.Shutdown(ctx)
+		})
+
+		return shutdownErr
+	}
+
+	t.Cleanup(func() {
+		if err := shutdown(); err != nil {
+			t.Errorf("shutdown observability: %v", err)
+		}
+	})
+
+	ctx := context.Background()
+
+	// Создаём span, который должен попасть в экспорт.
+	_, span := observability.TracerProvider().
+		Tracer("shutdown-test").
+		Start(ctx, "shutdown.flush")
+
+	span.End()
+
+	// Создаём metric measurement.
+	counter, err := observability.MeterProvider().
+		Meter("shutdown-test").
+		Int64Counter("shutdown.test.counter")
+	if err != nil {
+		t.Fatalf("create test counter: %v", err)
+	}
+
+	counter.Add(ctx, 1)
+
+	// Выполняем shutdown обоих провайдеров.
+	if err := shutdown(); err != nil {
+		t.Fatalf("Observability.Shutdown() error = %v", err)
+	}
+
+	mu.Lock()
+	tracesPayload := received["/v1/traces"]
+	metricsPayload := received["/v1/metrics"]
+	mu.Unlock()
+
+	if tracesPayload == 0 {
+		t.Fatal("trace exporter did not send data during shutdown")
+	}
+
+	if metricsPayload == 0 {
+		t.Fatal("metric exporter did not send data during shutdown")
+	}
 }
