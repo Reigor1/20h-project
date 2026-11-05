@@ -205,9 +205,35 @@ test-e2e-api:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
 
+# -----------------------------------------------------
+# Observability Testing
+# -----------------------------------------------------
+
 test-observability:
 	@go run ./tests/e2e/observability
 
+
+# Run load-testing profiles against an already running application.
+# Usage: make test-load [PROFILE=standard|ramp-up|steady-state|stress|all]
+# Optional: make test-load PROFILE=stress STRESS_WORKERS=75,100,150
+PROFILE ?= standard
+STRESS_WORKERS ?= 75,100,150
+STAGE_DURATION ?= 30s
+STEADY_WORKERS ?= 50
+STEADY_DURATION ?= 5m
+USERS ?= 10
+TASKS_PER_USER ?= 2
+
+test-load:
+	@go run ./tests/e2e/observability \
+		-scenario=load \
+		-load-profile=$(PROFILE) \
+		-stage-duration=$(STAGE_DURATION) \
+		-steady-workers=$(STEADY_WORKERS) \
+		-steady-duration=$(STEADY_DURATION) \
+		-stress-workers=$(STRESS_WORKERS) \
+		-users=$(USERS) \
+		-tasks-per-user=$(TASKS_PER_USER)
 
 # =====================================================
 # Observability

@@ -93,6 +93,10 @@ func run(ctx context.Context, config Config) (runErr error) {
 		fixtures.taskCount(),
 	)
 
+	if config.Scenario == "load" {
+		return runLoadTest(ctx, client, fixtures, config)
+	}
+
 	fmt.Println("Fixture lifecycle phase completed.")
 
 	fmt.Println("Running route coverage...")

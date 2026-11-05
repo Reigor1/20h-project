@@ -24,10 +24,23 @@ type apiResponse struct {
 }
 
 func newAPIClient(config Config) *apiClient {
+	maxConnections := config.SteadyStateWorkers
+	if len(workloadStages) > 0 && workloadStages[len(workloadStages)-1] > maxConnections {
+		maxConnections = workloadStages[len(workloadStages)-1]
+	}
+	for _, workers := range config.StressWorkers {
+		if workers > maxConnections {
+			maxConnections = workers
+		}
+	}
+	if maxConnections < 1 {
+		maxConnections = 1
+	}
+
 	transport := &http.Transport{
-		MaxIdleConns:          100,
-		MaxIdleConnsPerHost:   100,
-		MaxConnsPerHost:       100,
+		MaxIdleConns:          maxConnections,
+		MaxIdleConnsPerHost:   maxConnections,
+		MaxConnsPerHost:       maxConnections,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: time.Second,
@@ -80,7 +93,6 @@ func (c *apiClient) do(
 	}
 
 	request.Header.Set("Accept", "application/json")
-
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -151,6 +163,5 @@ func decodeJSON(response apiResponse, destination any) error {
 	if err := json.Unmarshal(response.Body, destination); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
-
 	return nil
 }
