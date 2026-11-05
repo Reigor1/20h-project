@@ -26,9 +26,6 @@ import (
 	users_postgres_repository "github.com/Reigor1/20h-project/internal/features/users/repository/postgres"
 	users_service "github.com/Reigor1/20h-project/internal/features/users/service"
 	users_transport_http "github.com/Reigor1/20h-project/internal/features/users/transport/http"
-	"github.com/exaring/otelpgx"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
 	_ "github.com/Reigor1/20h-project/docs"
@@ -74,7 +71,7 @@ func run() (runErr error) {
 
 	logger.Debug("application time zone", zap.Any("zone", time.Local))
 
-	configureOpenTelemetryErrorHandler(logger)
+	core_observability.ConfigureErrorHandler(logger)
 
 	logger.Debug("initializing observability")
 
@@ -121,33 +118,7 @@ func run() (runErr error) {
 
 	logger.Debug("initializing pgx tracer")
 
-	pgxTracer := core_observability_postgres.NewSanitizingTracer(
-		otelpgx.NewTracer(
-			otelpgx.WithTracerProvider(
-				observability.TracerProvider(),
-			),
-			otelpgx.WithMeterProvider(
-				observability.MeterProvider(),
-			),
-			otelpgx.WithMetricOperationName(
-				otelpgx.SQLOperationName,
-			),
-			otelpgx.WithMeterAttributes(
-				attribute.String(
-					"db.client.connection.pool.name",
-					"primary",
-				),
-			),
-			otelpgx.WithTracerAttributes(
-				attribute.String(
-					"db.client.connection.pool.name",
-					"primary",
-				),
-			),
-			otelpgx.WithDisableSQLStatementInAttributes(),
-			otelpgx.WithDisableConnectionDetailsInAttributes(),
-		),
-	)
+	pgxTracer := observability.NewPostgresTracer()
 
 	logger.Debug("initializing postgres connection pool")
 
@@ -257,21 +228,4 @@ func run() (runErr error) {
 	}
 
 	return nil
-}
-
-
-// configureOpenTelemetryErrorHandler routes OpenTelemetry SDK diagnostics
-// through the application logger. Call it once, before creating SDK providers.
-func configureOpenTelemetryErrorHandler(logger *core_logger.Logger) {
-	if logger == nil {
-		return
-	}
-
-	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		if err == nil {
-			return
-		}
-
-		logger.Error("OpenTelemetry SDK error", zap.Error(err))
-	}))
 }

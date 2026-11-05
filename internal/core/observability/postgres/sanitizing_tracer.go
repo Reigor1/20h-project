@@ -6,6 +6,9 @@ import (
 	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 type SanitizingTracer struct {
@@ -21,9 +24,34 @@ var (
 	_ pgxpool.AcquireTracer = (*SanitizingTracer)(nil)
 )
 
-func NewSanitizingTracer(tracer *otelpgx.Tracer) *SanitizingTracer {
+// NewSanitizingTracer creates a PostgreSQL tracer
+// with sensitive SQL and connection details disabled.
+func NewSanitizingTracer(
+	tracerProvider oteltrace.TracerProvider,
+	meterProvider metric.MeterProvider,
+) *SanitizingTracer {
 	return &SanitizingTracer{
-		Tracer: tracer,
+		Tracer: otelpgx.NewTracer(
+			otelpgx.WithTracerProvider(tracerProvider),
+			otelpgx.WithMeterProvider(meterProvider),
+			otelpgx.WithMetricOperationName(
+				otelpgx.SQLOperationName,
+			),
+			otelpgx.WithMeterAttributes(
+				attribute.String(
+					"db.client.connection.pool.name",
+					"primary",
+				),
+			),
+			otelpgx.WithTracerAttributes(
+				attribute.String(
+					"db.client.connection.pool.name",
+					"primary",
+				),
+			),
+			otelpgx.WithDisableSQLStatementInAttributes(),
+			otelpgx.WithDisableConnectionDetailsInAttributes(),
+		),
 	}
 }
 

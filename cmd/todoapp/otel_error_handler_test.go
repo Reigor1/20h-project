@@ -28,7 +28,7 @@ func TestOpenTelemetryExportErrorsAreLogged(t *testing.T) {
 		Logger: zap.New(logCore),
 	}
 
-	configureOpenTelemetryErrorHandler(logger)
+	core_observability.ConfigureErrorHandler(logger)
 
 	otlpServer := httptest.NewServer(http.HandlerFunc(func(
 		w http.ResponseWriter,

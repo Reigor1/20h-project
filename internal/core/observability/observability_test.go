@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	core_observability_postgres "github.com/Reigor1/20h-project/internal/core/observability/postgres"
-	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.opentelemetry.io/otel/attribute"
@@ -166,15 +164,7 @@ func TestInstrumentHTTPRouteCreatesPostgresChildSpan(t *testing.T) {
 		}
 	}()
 
-	pgxTracer := core_observability_postgres.NewSanitizingTracer(
-		otelpgx.NewTracer(
-			otelpgx.WithTracerProvider(tracerProvider),
-			otelpgx.WithMeterProvider(meterProvider),
-			otelpgx.WithMetricOperationName(otelpgx.SQLOperationName),
-			otelpgx.WithDisableSQLStatementInAttributes(),
-			otelpgx.WithDisableConnectionDetailsInAttributes(),
-		),
-	)
+	pgxTracer := observability.NewPostgresTracer()
 
 	const secret = "sensitive@example.com"
 
