@@ -27,6 +27,7 @@ import (
 	users_service "github.com/Reigor1/20h-project/internal/features/users/service"
 	users_transport_http "github.com/Reigor1/20h-project/internal/features/users/transport/http"
 	"github.com/exaring/otelpgx"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
@@ -73,6 +74,8 @@ func run() (runErr error) {
 
 	logger.Debug("application time zone", zap.Any("zone", time.Local))
 
+	configureOpenTelemetryErrorHandler(logger)
+
 	logger.Debug("initializing observability")
 
 	observability, err := core_observability.New(
@@ -103,6 +106,7 @@ func run() (runErr error) {
 		defer shutdownCancel()
 
 		if err := observability.Shutdown(shutdownCtx); err != nil {
+			logger.Error("OpenTelemetry shutdown failed", zap.Error(err))
 			runErr = errors.Join(
 				runErr,
 				fmt.Errorf("shutdown observability: %w", err),
@@ -253,4 +257,21 @@ func run() (runErr error) {
 	}
 
 	return nil
+}
+
+
+// configureOpenTelemetryErrorHandler routes OpenTelemetry SDK diagnostics
+// through the application logger. Call it once, before creating SDK providers.
+func configureOpenTelemetryErrorHandler(logger *core_logger.Logger) {
+	if logger == nil {
+		return
+	}
+
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		if err == nil {
+			return
+		}
+
+		logger.Error("OpenTelemetry SDK error", zap.Error(err))
+	}))
 }
