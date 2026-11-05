@@ -1,4 +1,4 @@
-package main
+package core_observability
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"time"
 
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
-	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -28,7 +27,7 @@ func TestOpenTelemetryExportErrorsAreLogged(t *testing.T) {
 		Logger: zap.New(logCore),
 	}
 
-	core_observability.ConfigureErrorHandler(logger)
+	ConfigureErrorHandler(logger)
 
 	otlpServer := httptest.NewServer(http.HandlerFunc(func(
 		w http.ResponseWriter,
@@ -52,9 +51,9 @@ func TestOpenTelemetryExportErrorsAreLogged(t *testing.T) {
 	)
 	t.Setenv("OTEL_BSP_SCHEDULE_DELAY", "10")
 
-	observability, err := core_observability.New(
+	observability, err := New(
 		context.Background(),
-		core_observability.Config{
+		Config{
 			ServiceName:           "20h-project-test",
 			ServiceVersion:        "test",
 			DeploymentEnvironment: "test",
