@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -45,7 +46,15 @@ func FromContext(ctx context.Context) *Logger {
 		panic("no logger in context")
 	}
 
-	return log
+	spanContext := trace.SpanFromContext(ctx).SpanContext()
+	if !spanContext.IsValid() {
+		return log
+	}
+
+	return log.With(
+		zap.String("trace_id", spanContext.TraceID().String()),
+		zap.String("span_id", spanContext.SpanID().String()),
+	)
 }
 
 func NewLogger(config Config) (*Logger, error) {

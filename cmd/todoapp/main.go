@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -199,11 +200,24 @@ func run() (runErr error) {
 		core_http_middleware.CORS(),
 		core_http_middleware.RequestID(),
 		core_http_middleware.Logger(logger),
-		core_http_middleware.Trace(),
 		core_http_middleware.Panic(),
 	)
 
-	httpServer.RegisterAPIRouteInstrumenter(observability.InstrumentHTTPRoute)
+	httpServer.RegisterAPIRouteInstrumenter(
+		func(method, path string, handler http.Handler) http.Handler {
+			handler = core_http_middleware.ChainMiddleware(
+				handler,
+				core_http_middleware.Trace(),
+				core_http_middleware.Panic(),
+			)
+
+			return observability.InstrumentHTTPRoute(
+				method,
+				path,
+				handler,
+			)
+		},
+	)
 
 	apiVersionRouter1 := core_http_server.NewAPIVersionRouter(
 		core_http_server.ApiVersion1,

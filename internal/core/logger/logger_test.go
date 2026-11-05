@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestNewLoggerCreatesLogFileAndWritesMessage(t *testing.T) {
@@ -144,5 +147,116 @@ func TestCloseClosesLogFile(t *testing.T) {
 		t.Fatal("writing to the log file after Close() succeeded, want a closed-file error")
 	} else if !errors.Is(err, os.ErrClosed) && !errors.Is(err, os.ErrInvalid) {
 		t.Fatalf("writing to the log file after Close() error = %v, want a closed-file error", err)
+	}
+}
+
+func TestFromContextAddsActiveTraceContext(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	logger := &Logger{Logger: zap.New(core)}
+
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+
+	t.Cleanup(func() {
+		if err := tracerProvider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown tracer provider: %v", err)
+		}
+	})
+
+	tracer := tracerProvider.Tracer("logger-test")
+
+	requestCtx, requestSpan := tracer.Start(
+		context.Background(),
+		"http request",
+	)
+	defer requestSpan.End()
+
+	requestCtx = ToContext(requestCtx, logger)
+
+	FromContext(requestCtx).Info("http log")
+
+	serviceCtx, serviceSpan := tracer.Start(
+		requestCtx,
+		"service operation",
+	)
+	defer serviceSpan.End()
+
+	FromContext(serviceCtx).Info("service log")
+
+	entries := logs.All()
+	if len(entries) != 2 {
+		t.Fatalf("log entries = %d, want 2", len(entries))
+	}
+
+	requestSpanContext := requestSpan.SpanContext()
+	serviceSpanContext := serviceSpan.SpanContext()
+
+	if requestSpanContext.TraceID() != serviceSpanContext.TraceID() {
+		t.Fatal("parent and child spans have different TraceIDs")
+	}
+
+	if requestSpanContext.SpanID() == serviceSpanContext.SpanID() {
+		t.Fatal("parent and child spans have identical SpanIDs")
+	}
+
+	want := []struct {
+		traceID string
+		spanID  string
+	}{
+		{
+			traceID: requestSpanContext.TraceID().String(),
+			spanID:  requestSpanContext.SpanID().String(),
+		},
+		{
+			traceID: serviceSpanContext.TraceID().String(),
+			spanID:  serviceSpanContext.SpanID().String(),
+		},
+	}
+
+	for i, expected := range want {
+		fields := entries[i].ContextMap()
+
+		if fields["trace_id"] != expected.traceID {
+			t.Errorf(
+				"entry %d trace_id = %v, want %s",
+				i,
+				fields["trace_id"],
+				expected.traceID,
+			)
+		}
+
+		if fields["span_id"] != expected.spanID {
+			t.Errorf(
+				"entry %d span_id = %v, want %s",
+				i,
+				fields["span_id"],
+				expected.spanID,
+			)
+		}
+	}
+}
+
+func TestFromContextDoesNotAddTraceFieldsWithoutSpan(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	logger := &Logger{Logger: zap.New(core)}
+
+	ctx := ToContext(context.Background(), logger)
+
+	FromContext(ctx).Info("untraced log")
+
+	entries := logs.All()
+	if len(entries) != 1 {
+		t.Fatalf("log entries = %d, want 1", len(entries))
+	}
+
+	fields := entries[0].ContextMap()
+
+	if _, exists := fields["trace_id"]; exists {
+		t.Error("trace_id unexpectedly present")
+	}
+
+	if _, exists := fields["span_id"]; exists {
+		t.Error("span_id unexpectedly present")
 	}
 }

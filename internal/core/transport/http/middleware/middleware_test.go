@@ -1,6 +1,7 @@
 package core_http_middleware
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 	"github.com/Reigor1/20h-project/internal/testutil"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 func TestChainMiddleware(t *testing.T) {
@@ -314,5 +317,89 @@ func TestDummyCallsNextBetweenLogs(t *testing.T) {
 	entries := logs.All()
 	if len(entries) != 2 || entries[0].Message != "- > before: test" || entries[1].Message != "< - after: test" {
 		t.Fatalf("dummy log events = %v", entries)
+	}
+}
+
+func TestTraceLogsIncludeActiveHTTPSpanContext(t *testing.T) {
+	logger, logs := testutil.NewObservedLogger()
+
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+
+	t.Cleanup(func() {
+		if err := tracerProvider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown tracer provider: %v", err)
+		}
+	})
+
+	handler := ChainMiddleware(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			core_logger.FromContext(r.Context()).Info("handler log")
+			w.WriteHeader(http.StatusAccepted)
+		}),
+		Trace(),
+	)
+
+	instrumentedHandler := otelhttp.NewHandler(
+		handler,
+		"GET /trace",
+		otelhttp.WithTracerProvider(tracerProvider),
+	)
+
+	request := httptest.NewRequest(http.MethodGet, "/trace", nil)
+	request = request.WithContext(
+		core_logger.ToContext(request.Context(), logger),
+	)
+
+	instrumentedHandler.ServeHTTP(
+		httptest.NewRecorder(),
+		request,
+	)
+
+	messages := []string{
+		">>> incoming HTTP request",
+		"handler log",
+		"<<< done HTTP request",
+	}
+
+	var traceID string
+	var spanID string
+
+	for i, message := range messages {
+		entries := logs.FilterMessage(message).All()
+		if len(entries) != 1 {
+			t.Fatalf(
+				"logs for %q = %d, want 1",
+				message,
+				len(entries),
+			)
+		}
+
+		fields := entries[0].ContextMap()
+
+		gotTraceID, ok := fields["trace_id"].(string)
+		if !ok || len(gotTraceID) != 32 {
+			t.Fatalf("trace_id = %v, want 32-character string", fields["trace_id"])
+		}
+
+		gotSpanID, ok := fields["span_id"].(string)
+		if !ok || len(gotSpanID) != 16 {
+			t.Fatalf("span_id = %v, want 16-character string", fields["span_id"])
+		}
+
+		if i == 0 {
+			traceID = gotTraceID
+			spanID = gotSpanID
+			continue
+		}
+
+		if gotTraceID != traceID {
+			t.Errorf("%q trace_id = %s, want %s", message, gotTraceID, traceID)
+		}
+
+		if gotSpanID != spanID {
+			t.Errorf("%q span_id = %s, want %s", message, gotSpanID, spanID)
+		}
 	}
 }
