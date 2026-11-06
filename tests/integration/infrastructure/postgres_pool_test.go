@@ -22,7 +22,7 @@ func TestPostgresPoolIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := core_pgx_pool.NewPool(ctx, config)
+	pool, err := core_pgx_pool.NewPool(ctx, config, nil)
 	if err != nil {
 		t.Fatalf("NewPool() error = %v, want successful connection", err)
 	}
@@ -133,7 +133,7 @@ func TestNewPoolRejectsInvalidConfiguration(t *testing.T) {
 		Password: "test-password",
 		Database: "test-database",
 		Timeout:  time.Second,
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("NewPool() error = nil, want invalid connection configuration error")
 	}

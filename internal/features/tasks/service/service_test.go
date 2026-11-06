@@ -9,6 +9,7 @@ import (
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 type tasksRepositoryStub struct {
@@ -161,10 +162,9 @@ func TestCreateTask(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectCreateTask = true
 	repository.createTaskResult = createdTask
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.CreateTask(context.Background(), inputTask)
-
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v, want nil", err)
 	}
@@ -202,7 +202,7 @@ func TestCreateTaskRejectsInvalidTask(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			repository := newTasksRepositoryStub(t)
-			service := NewTasksService(repository)
+			service := newTasksServiceForTest(repository)
 
 			got, err := service.CreateTask(context.Background(), testCase.task)
 
@@ -226,7 +226,7 @@ func TestCreateTaskReturnsRepositoryError(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectCreateTask = true
 	repository.createTaskError = repositoryError
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.CreateTask(context.Background(), inputTask)
 
@@ -246,10 +246,9 @@ func TestGetTask(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTask = true
 	repository.getTaskResult = wantTask
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.GetTask(context.Background(), 42)
-
 	if err != nil {
 		t.Fatalf("GetTask() error = %v, want nil", err)
 	}
@@ -266,7 +265,7 @@ func TestGetTaskReturnsRepositoryError(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTask = true
 	repository.getTaskError = repositoryError
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.GetTask(context.Background(), 42)
 
@@ -289,10 +288,9 @@ func TestGetTasksPassesFiltersAndPaginationToRepository(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTasks = true
 	repository.getTasksResult = wantTasks
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.GetTasks(context.Background(), &userID, &limit, &offset)
-
 	if err != nil {
 		t.Fatalf("GetTasks() error = %v, want nil", err)
 	}
@@ -320,10 +318,9 @@ func TestGetTasksAllowsUnsetPaginationAndEmptyResults(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTasks = true
 	repository.getTasksResult = []domain.Task{}
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.GetTasks(context.Background(), nil, nil, nil)
-
 	if err != nil {
 		t.Fatalf("GetTasks() error = %v, want nil", err)
 	}
@@ -364,7 +361,7 @@ func TestGetTasksRejectsNegativePagination(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			repository := newTasksRepositoryStub(t)
-			service := NewTasksService(repository)
+			service := newTasksServiceForTest(repository)
 
 			got, err := service.GetTasks(
 				context.Background(),
@@ -391,7 +388,7 @@ func TestGetTasksReturnsRepositoryError(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTasks = true
 	repository.getTasksError = repositoryError
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.GetTasks(context.Background(), nil, nil, nil)
 
@@ -424,10 +421,9 @@ func TestPathTaskAppliesPatchBeforeRepositoryUpdate(t *testing.T) {
 	repository.getTaskResult = initialTask
 	repository.expectPatchTask = true
 	repository.patchTaskResult = patchedTask
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.PathTask(context.Background(), 42, patch)
-
 	if err != nil {
 		t.Fatalf("PathTask() error = %v, want nil", err)
 	}
@@ -455,10 +451,9 @@ func TestPathTaskPassesUnchangedTaskForEmptyPatch(t *testing.T) {
 	repository.getTaskResult = initialTask
 	repository.expectPatchTask = true
 	repository.patchTaskResult = initialTask
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.PathTask(context.Background(), initialTask.ID, domain.TaskPatch{})
-
 	if err != nil {
 		t.Fatalf("PathTask() error = %v, want nil", err)
 	}
@@ -488,10 +483,9 @@ func TestPathTaskCompletesTaskAndPreservesUnchangedFields(t *testing.T) {
 	repository.getTaskResult = initialTask
 	repository.expectPatchTask = true
 	repository.patchTaskResult = initialTask
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	_, err := service.PathTask(context.Background(), initialTask.ID, patch)
-
 	if err != nil {
 		t.Fatalf("PathTask() error = %v, want nil", err)
 	}
@@ -518,7 +512,7 @@ func TestPathTaskReturnsGetErrorWithoutUpdating(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTask = true
 	repository.getTaskError = repositoryError
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.PathTask(context.Background(), 42, domain.TaskPatch{})
 
@@ -538,7 +532,7 @@ func TestPathTaskRejectsInvalidPatchWithoutUpdating(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTask = true
 	repository.getTaskResult = initialTask
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 	patch := domain.NewTaskPatch(
 		domain.Nullable[string]{Set: true},
 		domain.Nullable[string]{},
@@ -572,7 +566,7 @@ func TestPathTaskReturnsPatchRepositoryError(t *testing.T) {
 	repository.getTaskResult = initialTask
 	repository.expectPatchTask = true
 	repository.patchTaskError = repositoryError
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	got, err := service.PathTask(context.Background(), initialTask.ID, patch)
 
@@ -595,10 +589,9 @@ func TestPathTaskReturnsPatchRepositoryError(t *testing.T) {
 func TestDeleteTask(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectDeleteTask = true
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	err := service.DeleteTask(context.Background(), 42)
-
 	if err != nil {
 		t.Fatalf("DeleteTask() error = %v, want nil", err)
 	}
@@ -612,7 +605,7 @@ func TestDeleteTaskReturnsRepositoryError(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectDeleteTask = true
 	repository.deleteTaskError = repositoryError
-	service := NewTasksService(repository)
+	service := newTasksServiceForTest(repository)
 
 	err := service.DeleteTask(context.Background(), 42)
 
@@ -647,4 +640,8 @@ func sampleTaskWithID(id int) domain.Task {
 
 func boolPointer(value bool) *bool {
 	return &value
+}
+
+func newTasksServiceForTest(repository TasksRepository) *TasksService {
+	return NewTasksService(repository, noop.NewTracerProvider())
 }

@@ -5,14 +5,19 @@ import (
 	"fmt"
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
 func (s *UsersService) GetUser(
 	ctx context.Context,
 	id int,
 ) (domain.User, error) {
+	ctx, span := s.tracer.Start(ctx, "users.get")
+	defer span.End()
+
 	user, err := s.usersRepository.GetUser(ctx, id)
 	if err != nil {
+		core_observability.MarkSpanError(span, "users.get")
 		return domain.User{}, fmt.Errorf("get user from repository: %w", err)
 	}
 

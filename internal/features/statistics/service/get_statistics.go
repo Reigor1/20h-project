@@ -7,6 +7,7 @@ import (
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
 func (s *StatisticsService) GetStatistics(
@@ -15,7 +16,11 @@ func (s *StatisticsService) GetStatistics(
 	from *time.Time,
 	to *time.Time,
 ) (domain.Statistics, error) {
+	ctx, span := s.tracer.Start(ctx, "statistics.get")
+	defer span.End()
+
 	if from != nil && to != nil {
+		core_observability.MarkSpanError(span, "statistics.get")
 		if to.Before(*from) || to.Equal(*from) {
 			return domain.Statistics{}, fmt.Errorf(
 				"`to` must be after `from`: %w",
@@ -26,6 +31,7 @@ func (s *StatisticsService) GetStatistics(
 
 	tasks, err := s.statisticsRepository.GetTasks(ctx, userID, from, to)
 	if err != nil {
+		core_observability.MarkSpanError(span, "statistics.get")
 		return domain.Statistics{}, fmt.Errorf("get tasks from repository: %w", err)
 	}
 

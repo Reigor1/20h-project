@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/Reigor1/20h-project/docs"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
-	"go.uber.org/zap"
 )
 
 type HTTPServer struct {
@@ -18,7 +18,8 @@ type HTTPServer struct {
 	config Config
 	log    *core_logger.Logger
 
-	middleware []core_http_middleware.Middleware
+	middleware           []core_http_middleware.Middleware
+	apiRouteInstrumenter APIRouteInstrumenter
 }
 
 func NewHTTPServer(
@@ -34,33 +35,53 @@ func NewHTTPServer(
 	}
 }
 
+func (s *HTTPServer) RegisterAPIRouteInstrumenter(instrumenter APIRouteInstrumenter) {
+	s.apiRouteInstrumenter = instrumenter
+}
+
 func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 	for _, router := range routers {
 		prefix := "/api/" + string(router.apiVersion)
 
+		var instrumenter APIRouteInstrumenter
+		if s.apiRouteInstrumenter != nil {
+			instrumenter = func(method, path string, handler http.Handler) http.Handler {
+				return s.apiRouteInstrumenter(method, prefix+path, handler)
+			}
+		}
+
 		s.mux.Handle(
 			prefix+"/",
-			http.StripPrefix(prefix, router.WithMiddleware()),
+			http.StripPrefix(prefix, router.WithMiddleware(instrumenter)),
 		)
 	}
 }
 
 func (s *HTTPServer) RegisterSwagger() {
-	s.mux.Handle(
-		"/swagger/",
+	swaggerHandler := core_http_middleware.ChainMiddleware(
 		httpSwagger.Handler(
 			httpSwagger.URL("/swagger/doc.json"),
 			httpSwagger.DefaultModelsExpandDepth(-1),
 		),
+		core_http_middleware.Trace(),
 	)
 
-	s.mux.HandleFunc(
-		"/swagger/doc.json",
+	s.mux.Handle("/swagger/", swaggerHandler)
+
+	swaggerDocHandler := http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(docs.SwaggerInfo.ReadDoc()))
 		},
+	)
+
+	s.mux.Handle(
+		"/swagger/doc.json",
+		core_http_middleware.ChainMiddleware(
+			swaggerDocHandler,
+			core_http_middleware.Trace(),
+		),
 	)
 }
 
@@ -72,40 +93,76 @@ func (s *HTTPServer) Run(ctx context.Context) error {
 		Handler: mux,
 	}
 
-	ch := make(chan error, 1)
+	listener, err := net.Listen("tcp", s.config.Addr)
+	if err != nil {
+		return fmt.Errorf("listen HTTP server: %w", err)
+	}
+
+	serveResult := make(chan error, 1)
 
 	go func() {
-		defer close(ch)
-
-		s.log.Warn("start HTTP server", zap.String("addr", s.config.Addr))
-
-		err := server.ListenAndServe()
-
-		if !errors.Is(err, http.ErrServerClosed) {
-			ch <- err
-		}
+		serveResult <- server.Serve(listener)
 	}()
 
+	var (
+		serveErr      error
+		serveReturned bool
+		runErr        error
+	)
+
 	select {
-	case err := <-ch:
-		if err != nil {
-			return fmt.Errorf("listen and server HTTP: %w", err)
-		}
+	case serveErr = <-serveResult:
+		serveReturned = true
+
 	case <-ctx.Done():
-		s.log.Warn("shutdown HTTP server...")
-
-		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(),
-			s.config.ShutdownTimeout,
-		)
-		defer cancel()
-
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			_ = server.Close()
-
-			return fmt.Errorf("shutdown HTTP server: %w", err)
+		if s.log != nil {
+			s.log.Warn("shutdown HTTP server...")
 		}
+	}
 
+	if serveReturned &&
+		serveErr != nil &&
+		!errors.Is(serveErr, http.ErrServerClosed) {
+		runErr = fmt.Errorf("serve HTTP server: %w", serveErr)
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		s.config.ShutdownTimeout,
+	)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		runErr = errors.Join(
+			runErr,
+			fmt.Errorf("shutdown HTTP server: %w", err),
+		)
+
+		if closeErr := server.Close(); closeErr != nil {
+			runErr = errors.Join(
+				runErr,
+				fmt.Errorf("force close HTTP server: %w", closeErr),
+			)
+		}
+	}
+
+	if !serveReturned {
+		serveErr = <-serveResult
+
+		if serveErr != nil &&
+			!errors.Is(serveErr, http.ErrServerClosed) {
+			runErr = errors.Join(
+				runErr,
+				fmt.Errorf("serve HTTP server: %w", serveErr),
+			)
+		}
+	}
+
+	if runErr != nil {
+		return runErr
+	}
+
+	if s.log != nil {
 		s.log.Warn("HTTP server stopped")
 	}
 

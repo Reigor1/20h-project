@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +12,8 @@ import (
 
 	core_config "github.com/Reigor1/20h-project/internal/core/config"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
+	core_observability_postgres "github.com/Reigor1/20h-project/internal/core/observability/postgres"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
@@ -27,76 +31,181 @@ import (
 	_ "github.com/Reigor1/20h-project/docs"
 )
 
-// @Title 		 Golang Todo API
-// @Version 	 1.0
+// @Title        Golang Todo API
+// @Version      1.0
 // @Description  Todo Application REST-API scheme
 // @Description  `Перед работой помолитесь Богу машины`
-// @Host 		 127.0.0.1:5050
-// @BasePath 	 /api/v1
+// @Host         127.0.0.1:5050
+// @BasePath     /api/v1
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "application failed:", err)
+		os.Exit(1)
+	}
+}
+
+func run() (runErr error) {
 	cfg := core_config.NewConfigMust()
 	time.Local = cfg.TimeZone
 
 	ctx, cancel := signal.NotifyContext(
 		context.Background(),
-		syscall.SIGINT, syscall.SIGTERM,
+		syscall.SIGINT,
+		syscall.SIGTERM,
 	)
 	defer cancel()
 
 	logger, err := core_logger.NewLogger(core_logger.NewConfigMust())
 	if err != nil {
-		fmt.Println("failed to init application logger:", err)
-		os.Exit(1)
+		return fmt.Errorf("init application logger: %w", err)
 	}
-	defer logger.Close()
+
+	defer func() {
+		if err := logger.Close(); err != nil {
+			runErr = errors.Join(
+				runErr,
+				fmt.Errorf("close application logger: %w", err),
+			)
+		}
+	}()
 
 	logger.Debug("application time zone", zap.Any("zone", time.Local))
 
-	logger.Debug("initializing postgres connection pool")
+	core_observability.ConfigureErrorHandler(logger)
 
-	pool, err := core_pgx_pool.NewPool(
+	logger.Debug("initializing observability")
+
+	observability, err := core_observability.New(
 		ctx,
-		core_pgx_pool.NewConfigMust(),
+		core_observability.Config{
+			ServiceName:           "20h-project",
+			ServiceVersion:        os.Getenv("SERVICE_VERSION"),
+			DeploymentEnvironment: os.Getenv("DEPLOYMENT_ENVIRONMENT"),
+		},
 	)
 	if err != nil {
-		logger.Fatal("failed to init postgres connection pool", zap.Error(err))
+		return fmt.Errorf("init observability: %w", err)
 	}
-	defer pool.Close()
+
+	// Observability owns the MeterProvider and its registrations.
+	// Shutdown it before closing the pool so the final metric collection
+	// can still read pgxpool.Stat().
+	var pool *core_pgx_pool.Pool
+
+	defer func() {
+		// Stop application work before shutting down its dependencies.
+		cancel()
+
+		shutdownCtx, shutdownCancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer shutdownCancel()
+
+		if err := observability.Shutdown(shutdownCtx); err != nil {
+			logger.Error("OpenTelemetry shutdown failed", zap.Error(err))
+			runErr = errors.Join(
+				runErr,
+				fmt.Errorf("shutdown observability: %w", err),
+			)
+		}
+
+		// pgxpool.Close() waits until all acquired connections are returned.
+		if pool != nil {
+			pool.Close()
+		}
+	}()
+
+	logger.Debug("initializing pgx tracer")
+
+	pgxTracer := observability.NewPostgresTracer()
+
+	logger.Debug("initializing postgres connection pool")
+
+	pool, err = core_pgx_pool.NewPool(
+		ctx,
+		core_pgx_pool.NewConfigMust(),
+		pgxTracer,
+	)
+	if err != nil {
+		return fmt.Errorf("init PostgreSQL connection pool: %w", err)
+	}
+
+	logger.Debug("initializing postgres pool metrics")
+
+	if err := core_observability_postgres.RegisterPoolMetrics(
+		observability.MeterProvider(),
+		pool,
+	); err != nil {
+		return fmt.Errorf("register PostgreSQL pool metrics: %w", err)
+	}
 
 	logger.Debug("initializing feature", zap.String("feature", "users"))
+
 	usersRepository := users_postgres_repository.NewUsersRepository(pool)
-	usersService := users_service.NewUsersService(usersRepository)
+	usersService := users_service.NewUsersService(
+		usersRepository,
+		observability.TracerProvider(),
+	)
 	usersTransportHTTP := users_transport_http.NewUsersHTTPHandler(usersService)
 
 	logger.Debug("initializing feature", zap.String("feature", "tasks"))
+
 	tasksRepository := tasks_postgres_repository.NewTasksRepository(pool)
-	tasksService := tasks_service.NewTasksService(tasksRepository)
+	tasksService := tasks_service.NewTasksService(
+		tasksRepository,
+		observability.TracerProvider(),
+	)
 	tasksTransportHTTP := tasks_transport_http.NewTasksHTTPHandler(tasksService)
 
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
+
 	statisticsRepository := statistics_postgres_repository.NewStatisticsRepository(pool)
-	statisticsService := statistics_service.NewStatisticsService(statisticsRepository)
+	statisticsService := statistics_service.NewStatisticsService(
+		statisticsRepository,
+		observability.TracerProvider(),
+	)
 	statisticsTransportHTTP := statistics_transport_http.NewStatisticsHTTPHandler(statisticsService)
 
 	logger.Debug("initializing HTTP server")
+
 	httpServer := core_http_server.NewHTTPServer(
 		core_http_server.NewConfigMust(),
 		logger,
 		core_http_middleware.CORS(),
 		core_http_middleware.RequestID(),
 		core_http_middleware.Logger(logger),
-		core_http_middleware.Trace(),
 		core_http_middleware.Panic(),
 	)
-	apiVersionRouter1 := core_http_server.NewAPIVersionRouter(core_http_server.ApiVersion1)
+
+	httpServer.RegisterAPIRouteInstrumenter(
+		func(method, path string, handler http.Handler) http.Handler {
+			handler = core_http_middleware.ChainMiddleware(
+				handler,
+				core_http_middleware.Trace(),
+				core_http_middleware.Panic(),
+			)
+
+			return observability.InstrumentHTTPRoute(
+				method,
+				path,
+				handler,
+			)
+		},
+	)
+
+	apiVersionRouter1 := core_http_server.NewAPIVersionRouter(
+		core_http_server.ApiVersion1,
+	)
+
 	apiVersionRouter1.RegisterRouts(usersTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(tasksTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(statisticsTransportHTTP.Routes()...)
 
-	// Example of usage apiVersionRouter2 with dummy middleware
+	// Example of usage apiVersionRouter2 with dummy middleware.
 	// apiVersionRouter2 := core_http_server.NewAPIVersionRouter(
-	// 	core_http_server.ApiVersion2,
-	// 	core_http_middleware.Dummy("api v2 middleware"),
+	//     core_http_server.ApiVersion2,
+	//     core_http_middleware.Dummy("api v2 middleware"),
 	// )
 	// apiVersionRouter2.RegisterRouts(usersTransportHTTP.Routes()...)
 
@@ -104,9 +213,19 @@ func main() {
 		apiVersionRouter1,
 		// apiVersionRouter2,
 	)
+
 	httpServer.RegisterSwagger()
 
+	logger.Info(
+		"observability dashboards",
+		zap.String("prometheus_url", "http://localhost:9090/graph"),
+		zap.String("grafana_url", "http://localhost:3000"),
+		zap.String("swagger_url", "http://127.0.0.1:5050/swagger/index.html"),
+	)
+
 	if err := httpServer.Run(ctx); err != nil {
-		logger.Error("HTTP server run error", zap.Error(err))
+		return fmt.Errorf("run HTTP server: %w", err)
 	}
+
+	return nil
 }

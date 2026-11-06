@@ -6,6 +6,7 @@ import (
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
 func (s *TasksService) GetTasks(
@@ -14,7 +15,11 @@ func (s *TasksService) GetTasks(
 	limit *int,
 	offset *int,
 ) ([]domain.Task, error) {
+	ctx, span := s.tracer.Start(ctx, "tasks.list")
+	defer span.End()
+	
 	if limit != nil && *limit < 0 {
+		core_observability.MarkSpanError(span, "tasks.list")
 		return nil, fmt.Errorf(
 			"limit must be non-negative: %w",
 			core_errors.ErrInvalidArgument,
@@ -22,6 +27,7 @@ func (s *TasksService) GetTasks(
 	}
 
 	if offset != nil && *offset < 0 {
+		core_observability.MarkSpanError(span, "tasks.list")
 		return nil, fmt.Errorf(
 			"offset must be non-negative: %w",
 			core_errors.ErrInvalidArgument,
@@ -30,6 +36,7 @@ func (s *TasksService) GetTasks(
 
 	tasks, err := s.tasksRepository.GetTasks(ctx, userID, limit, offset)
 	if err != nil {
+		core_observability.MarkSpanError(span, "tasks.list")
 		return nil, fmt.Errorf("get tasks from repository: %w", err)
 	}
 

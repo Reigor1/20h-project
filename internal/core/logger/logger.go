@@ -2,11 +2,14 @@ package core_logger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -23,10 +26,16 @@ func ToContext(ctx context.Context, log *Logger) context.Context {
 	)
 }
 
+type loggerFileState struct {
+	once sync.Once
+	err  error
+}
+
 // TODO: add Logger interface :)
 
 type Logger struct {
 	*zap.Logger
+	fileState *loggerFileState
 
 	file *os.File
 }
@@ -37,7 +46,15 @@ func FromContext(ctx context.Context) *Logger {
 		panic("no logger in context")
 	}
 
-	return log
+	spanContext := trace.SpanFromContext(ctx).SpanContext()
+	if !spanContext.IsValid() {
+		return log
+	}
+
+	return log.With(
+		zap.String("trace_id", spanContext.TraceID().String()),
+		zap.String("span_id", spanContext.SpanID().String()),
+	)
 }
 
 func NewLogger(config Config) (*Logger, error) {
@@ -74,20 +91,60 @@ func NewLogger(config Config) (*Logger, error) {
 	zapLogger := zap.New(core, zap.AddCaller())
 
 	return &Logger{
-		Logger: zapLogger,
-		file:   logFile,
+		Logger:    zapLogger,
+		fileState: &loggerFileState{},
+		file:      logFile,
 	}, nil
 }
 
 func (l *Logger) With(field ...zap.Field) *Logger {
 	return &Logger{
-		Logger: l.Logger.With(field...),
-		file:   l.file,
+		Logger:    l.Logger.With(field...),
+		fileState: l.fileState,
+		file:      l.file,
 	}
 }
 
-func (l *Logger) Close() {
-	if err := l.file.Close(); err != nil {
-		fmt.Println("failed to close application logger:")
+func (l *Logger) Close() error {
+	if l == nil || l.file == nil {
+		return nil
 	}
+
+	if l.fileState == nil {
+		var closeErr error
+
+		if err := l.file.Sync(); err != nil {
+			closeErr = errors.Join(
+				closeErr,
+				fmt.Errorf("sync application log file: %w", err),
+			)
+		}
+
+		if err := l.file.Close(); err != nil {
+			closeErr = errors.Join(
+				closeErr,
+				fmt.Errorf("close application log file: %w", err),
+			)
+		}
+
+		return closeErr
+	}
+
+	l.fileState.once.Do(func() {
+		if err := l.file.Sync(); err != nil {
+			l.fileState.err = errors.Join(
+				l.fileState.err,
+				fmt.Errorf("sync application log file: %w", err),
+			)
+		}
+
+		if err := l.file.Close(); err != nil {
+			l.fileState.err = errors.Join(
+				l.fileState.err,
+				fmt.Errorf("close application log file: %w", err),
+			)
+		}
+	})
+
+	return l.fileState.err
 }

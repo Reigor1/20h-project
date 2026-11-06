@@ -1,15 +1,31 @@
+# =====================================================
+# Project Configuration
+# =====================================================
+
+# Load environment variables from the project .env file.
 include .env
+# Export all variables loaded from .env to child processes.
 export
 
+# Define the absolute path to the project root.
 export PROJECT_ROOT := $(CURDIR)
 
-env-up:
+
+# =====================================================
+# Environment Management
+# =====================================================
+
+# Start the PostgreSQL development environment.
+env-postgres-up:
 	@docker compose up -d todoapp-postgres
 
-env-down:
+# Stop the PostgreSQL development environment.
+env-postgres-down:
 	@docker compose down todoapp-postgres
 
-env-cleanup:
+# Stop and remove environment containers and PostgreSQL data.
+# Requires explicit user confirmation before deleting data.
+env-postgres-cleanup:
 	@read -p "Are you sure you want to clean up the environment? (y/n): " ans; \
 	if [ "$$ans" = "y" ]; then \
 		docker-compose down todoapp-postgres port-forwarder && \
@@ -19,12 +35,21 @@ env-cleanup:
 		echo "Environment cleanup aborted."; \
 	fi
 
+# Start the port forwarding service.
 env-port-forward:
 	@docker compose up -d port-forwarder
 
+# Stop the port forwarding service.
 env-port-close:
 	@docker compose down port-forwarder
 
+
+# =====================================================
+# Database Migrations
+# =====================================================
+
+# Create a new sequential SQL migration.
+# Usage: make migrate-create seq=init
 migrate-create:
 	@if [ -z "$(seq)" ]; then \
 		echo "Required parameter missing seq. Example: make migrate-create seq=init"; \
@@ -36,12 +61,17 @@ migrate-create:
 		-dir //migrations \
 		-seq "$(seq)"
 
+# Apply all available database migrations.
 migrate-up:
 	@make migrate-action action=up
 
+# Roll back the last database migration.
 migrate-down:
 	@make migrate-action action=down
 
+# Execute a database migration action.
+# Usage: make migrate-action action=up
+# Optional: make migrate-action action=down version=1
 migrate-action:
 	@if [ -z "$(action)" ]; then \
 		echo "Required parameter missing action. Example: make migrate-action action=up"; \
@@ -51,27 +81,36 @@ migrate-action:
 		-path //migrations \
 		-database postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@todoapp-postgres:5432/${POSTGRES_DB}?sslmode=disable "$(action)" $(version) \
 
-logs-cleanup:
-	@read -p "Are you sure you want to clean up the all logs? (y/n): " ans; \
-	if [ "$$ans" = "y" ]; then \
-		rm -rf ${PROJECT_ROOT}/out/logs && \
-		echo "Files cleaned up!"; \
-	else \
-		echo "Logs cleanup aborted."; \
-	fi
 
+# =====================================================
+# Application
+# =====================================================
+
+# Run the application locally.
+# Configure the log directory and PostgreSQL connection before starting.
 todoapp-run:
 	@export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
 	export POSTGRES_HOST=localhost && \
+	$(MAKE) env-postgres-up && \
+	$(MAKE) env-port-forward && \
+	$(MAKE) observability-up && \
 	go mod tidy && \
 	go run ${PROJECT_ROOT}/cmd/todoapp/main.go
 
+# Build the application Docker image and start the container.
 todoapp-deploy:
 	@docker compose up -d --build todoapp
 
+# Stop the application container without removing it.
 todoapp-undeploy:
 	@docker compose down todoapp
 
+
+# =====================================================
+# API Documentation
+# =====================================================
+
+# Generate Swagger documentation from application source code.
 swagger-gen:
 	@docker compose run --rm swagger \
 		init \
@@ -79,9 +118,13 @@ swagger-gen:
 		-o docs \
 		--parseInternal \
 		--parseDependency
-ps: 
-	@docker compose ps
 
+
+# =====================================================
+# Testing
+# =====================================================
+
+# Run all integration test suites sequentially.
 tests-integration: 
 	@$(MAKE) test-integration-pgx
 	@$(MAKE) test-integration-http
@@ -89,6 +132,9 @@ tests-integration:
 	@$(MAKE) test-integration-tasks-postgres
 	@$(MAKE) test-integration-statistics-postgres
 
+# Run PostgreSQL connection pool integration tests.
+# Start the test database, load test environment variables,
+# execute tests and remove the test container.
 test-integration-pgx:
 	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
 	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
@@ -99,11 +145,13 @@ test-integration-pgx:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
 
+# Run HTTP server integration tests without external dependencies.
 test-integration-http:
 	@go test -count=1 -v -run \
-		'^TestRun(ServesRequestsAndShutsDownGracefully|ReturnsListenError)$$' \
+		'^TestRun(ServesRequestsAndShutsDownGracefully|ReturnsListenError|WaitsForInFlightRequestBeforeReturning)$$' \
 		${PROJECT_ROOT}/tests/integration/infrastructure
 
+# Run PostgreSQL users repository integration tests.
 test-integration-users-postgres:
 	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
 	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
@@ -114,6 +162,7 @@ test-integration-users-postgres:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
 
+# Run PostgreSQL tasks repository integration tests.
 test-integration-tasks-postgres:
 	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
 	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
@@ -124,6 +173,7 @@ test-integration-tasks-postgres:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
 
+# Run PostgreSQL statistics repository integration tests.
 test-integration-statistics-postgres:
 	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
 	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
@@ -134,9 +184,13 @@ test-integration-statistics-postgres:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
 
+# Run all API end-to-end test suites.
 tests-e2e:
 	@$(MAKE) test-e2e-api
 
+# Run API end-to-end tests against a dedicated PostgreSQL test database.
+# Start the test database, apply the initial migration,
+# execute E2E tests and remove the test container.
 test-e2e-api:
 	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
 	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
@@ -150,3 +204,133 @@ test-e2e-api:
 		test_status=$$?; \
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
+
+# -----------------------------------------------------
+# Observability Testing
+# -----------------------------------------------------
+
+test-observability:
+	@go run ./tests/e2e/observability
+
+
+# Run load-testing profiles against an already running application.
+# Usage: make test-load [PROFILE=standard|ramp-up|steady-state|stress|all]
+# Optional: make test-load PROFILE=stress STRESS_WORKERS=75,100,150
+PROFILE ?= standard
+STRESS_WORKERS ?= 75,100,150
+STAGE_DURATION ?= 30s
+STEADY_WORKERS ?= 50
+STEADY_DURATION ?= 5m
+USERS ?= 10
+TASKS_PER_USER ?= 2
+
+test-load:
+	@go run ./tests/e2e/observability \
+		-scenario=load \
+		-load-profile=$(PROFILE) \
+		-stage-duration=$(STAGE_DURATION) \
+		-steady-workers=$(STEADY_WORKERS) \
+		-steady-duration=$(STEADY_DURATION) \
+		-stress-workers=$(STRESS_WORKERS) \
+		-users=$(USERS) \
+		-tasks-per-user=$(TASKS_PER_USER)
+
+# =====================================================
+# Observability
+# =====================================================
+
+# Start all observability services in dependency order.
+observability-up:
+	@$(MAKE) tempo-up
+	@$(MAKE) otel-collector-up
+	@$(MAKE) prometheus-up
+	@$(MAKE) loki-up
+	@$(MAKE) alloy-up
+	@$(MAKE) grafana-up
+
+# Stop all observability services in reverse startup order.
+observability-down:
+	@$(MAKE) grafana-down
+	@$(MAKE) alloy-down
+	@$(MAKE) loki-down
+	@$(MAKE) prometheus-down
+	@$(MAKE) otel-collector-down
+	@$(MAKE) tempo-down
+
+# Start Tempo.
+tempo-up:
+	@docker compose up -d tempo
+
+# Stop Tempo.
+tempo-down:
+	@docker compose stop tempo
+
+# Start OpenTelemetry Collector.
+otel-collector-up:
+	@docker compose up -d otel-collector
+
+# Stop OpenTelemetry Collector.
+otel-collector-down:
+	@docker compose stop otel-collector
+
+# Start Prometheus.
+prometheus-up:
+	@docker compose up -d prometheus
+
+# Stop Prometheus.
+prometheus-down:
+	@docker compose stop prometheus
+
+# Start Loki.
+loki-up:
+	@docker compose up -d loki
+
+# Stop Loki.
+loki-down:
+	@docker compose stop loki
+
+# Start Grafana Alloy.
+alloy-up:
+	@docker compose up -d alloy
+
+# Stop Grafana Alloy.
+alloy-down:
+	@docker compose stop alloy
+
+# Start Grafana.
+grafana-up:
+	@docker compose up -d grafana
+
+# Stop Grafana.
+grafana-down:
+	@docker compose stop grafana
+
+
+# =====================================================
+# Diagnostics & Maintenance
+# =====================================================
+
+# Display the status of all Docker Compose services.
+ps:
+	@docker compose ps
+
+# Remove all application log files.
+# Requires explicit user confirmation before deleting logs.
+logs-cleanup:
+	@read -p "Are you sure you want to clean up the all logs? (y/n): " ans; \
+	if [ "$$ans" = "y" ]; then \
+		rm -rf ${PROJECT_ROOT}/out/logs && \
+		echo "Files cleaned up!"; \
+	else \
+		echo "Logs cleanup aborted."; \
+	fi
+
+# Restart one or more Docker Compose services.
+# Usage: make docker-restart SERVICES="alloy grafana"
+.PHONY: docker-restart
+docker-restart:
+	@if [ -z "$(strip $(SERVICES))" ]; then \
+		echo 'Usage: make docker-restart SERVICES="alloy grafana"'; \
+		exit 1; \
+	fi
+	@PROJECT_ROOT="$(PROJECT_ROOT)" docker compose restart $(SERVICES)

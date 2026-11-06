@@ -24,7 +24,7 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 
 	connectionContext, cancelConnection := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelConnection()
-	pool, err := core_pgx_pool.NewPool(connectionContext, config)
+	pool, err := core_pgx_pool.NewPool(connectionContext, config, nil)
 	if err != nil {
 		t.Fatalf("connect to configured PostgreSQL test database: %v", err)
 	}

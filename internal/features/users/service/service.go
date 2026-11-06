@@ -4,10 +4,14 @@ import (
 	"context"
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
+	"go.opentelemetry.io/otel/trace"
 )
+
+const tracerInstrumentationName = "github.com/Reigor1/20h-project/internal/features/users/service"
 
 type UsersService struct {
 	usersRepository UsersRepository
+	tracer          trace.Tracer
 }
 
 type UsersRepository interface {
@@ -41,8 +45,10 @@ type UsersRepository interface {
 
 func NewUsersService(
 	usersRepository UsersRepository,
+	tracerProvider trace.TracerProvider,
 ) *UsersService {
 	return &UsersService{
 		usersRepository: usersRepository,
+		tracer:          tracerProvider.Tracer(tracerInstrumentationName),
 	}
 }

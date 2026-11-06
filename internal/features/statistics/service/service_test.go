@@ -9,6 +9,7 @@ import (
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 type statisticsRepositoryStub struct {
@@ -87,10 +88,9 @@ func TestGetStatisticsCalculatesAggregatesAndForwardsFilters(t *testing.T) {
 	)
 	repository := newStatisticsRepositoryStub(t)
 	repository.tasks = []domain.Task{firstTask, secondTask, incompleteTask}
-	service := NewStatisticsService(repository)
+	service := newStatisticsServiceForTest(repository)
 
 	got, err := service.GetStatistics(context.Background(), &userID, &from, &to)
-
 	if err != nil {
 		t.Fatalf("GetStatistics() error = %v, want nil", err)
 	}
@@ -118,10 +118,9 @@ func TestGetStatisticsCalculatesAggregatesAndForwardsFilters(t *testing.T) {
 func TestGetStatisticsReturnsZeroValuesForNoTasks(t *testing.T) {
 	repository := newStatisticsRepositoryStub(t)
 	repository.tasks = []domain.Task{}
-	service := NewStatisticsService(repository)
+	service := newStatisticsServiceForTest(repository)
 
 	got, err := service.GetStatistics(context.Background(), nil, nil, nil)
-
 	if err != nil {
 		t.Fatalf("GetStatistics() error = %v, want nil", err)
 	}
@@ -147,10 +146,9 @@ func TestGetStatisticsOmitsAverageWhenCompletedDurationIsZero(t *testing.T) {
 	incompleteTask := domain.NewTask(2, 1, "Open task", nil, false, createdAt, nil, 27)
 	repository := newStatisticsRepositoryStub(t)
 	repository.tasks = []domain.Task{completedTask, incompleteTask}
-	service := NewStatisticsService(repository)
+	service := newStatisticsServiceForTest(repository)
 
 	got, err := service.GetStatistics(context.Background(), nil, nil, nil)
-
 	if err != nil {
 		t.Fatalf("GetStatistics() error = %v, want nil", err)
 	}
@@ -180,7 +178,7 @@ func TestGetStatisticsRejectsInvalidDateRange(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			repository := newStatisticsRepositoryStub(t)
-			service := NewStatisticsService(repository)
+			service := newStatisticsServiceForTest(repository)
 
 			got, err := service.GetStatistics(context.Background(), nil, &from, &testCase.to)
 
@@ -201,7 +199,7 @@ func TestGetStatisticsReturnsRepositoryError(t *testing.T) {
 	repositoryError := errors.New("database unavailable")
 	repository := newStatisticsRepositoryStub(t)
 	repository.err = repositoryError
-	service := NewStatisticsService(repository)
+	service := newStatisticsServiceForTest(repository)
 
 	got, err := service.GetStatistics(context.Background(), nil, nil, nil)
 
@@ -214,4 +212,8 @@ func TestGetStatisticsReturnsRepositoryError(t *testing.T) {
 	if !repository.called {
 		t.Fatal("GetTasks() was not called")
 	}
+}
+
+func newStatisticsServiceForTest(repository StatisticsRepository) *StatisticsService {
+	return NewStatisticsService(repository, noop.NewTracerProvider())
 }

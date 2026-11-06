@@ -4,10 +4,14 @@ import (
 	"context"
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
+	"go.opentelemetry.io/otel/trace"
 )
+
+const tracerInstrumentationName = "github.com/Reigor1/20h-project/internal/features/tasks/service"
 
 type TasksService struct {
 	tasksRepository TasksRepository
+	tracer          trace.Tracer
 }
 
 type TasksRepository interface {
@@ -42,8 +46,10 @@ type TasksRepository interface {
 
 func NewTasksService(
 	tasksRepository TasksRepository,
+	tracerProvider trace.TracerProvider,
 ) *TasksService {
 	return &TasksService{
 		tasksRepository: tasksRepository,
+		tracer:          tracerProvider.Tracer(tracerInstrumentationName),
 	}
 }

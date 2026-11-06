@@ -1,0 +1,65 @@
+logging {
+	level  = "info"
+	format = "logfmt"
+}
+
+loki.source.file "todoapp" {
+	targets = [
+		{
+			"__path__"     = "/var/log/todoapp/*.log",
+			"job"          = "todoapp",
+			"service_name" = "20h-project",
+			"environment"  = sys.env("DEPLOYMENT_ENVIRONMENT"),
+		},
+	]
+
+	forward_to = [loki.process.todoapp.receiver]
+
+	file_match {
+		enabled     = true
+		sync_period = "10s"
+	}
+}
+
+loki.process "todoapp" {
+	stage.decolorize { }
+
+	stage.regex {
+		expression = "^(?P<timestamp>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6})\\s+(?P<level>[A-Z]+)"
+	}
+
+	stage.timestamp {
+		source            = "timestamp"
+		format            = "2006-01-02T15:04:05.000000"
+		location          = sys.env("TIME_ZONE")
+		action_on_failure = "skip"
+	}
+
+	stage.regex {
+		expression = "\"trace_id\"\\s*:\\s*\"(?P<trace_id>[0-9a-f]{32})\""
+	}
+
+	stage.regex {
+		expression = "\"span_id\"\\s*:\\s*\"(?P<span_id>[0-9a-f]{16})\""
+	}
+
+	stage.structured_metadata {
+		values = {
+			level    = "level",
+			trace_id = "trace_id",
+			span_id  = "span_id",
+		}
+	}
+
+	stage.label_drop {
+		values = ["filename"]
+	}
+
+	forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}
