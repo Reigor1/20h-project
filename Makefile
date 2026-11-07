@@ -43,6 +43,17 @@ env-port-forward:
 env-port-close:
 	@docker compose down port-forwarder
 
+# ----------------------------
+# Redis
+# ----------------------------
+
+# Start the Redis development environment.
+env-redis-up:
+	@docker compose up -d redis
+
+# Stop the Redis development environment.
+env-redis-down:
+	@docker compose stop redis
 
 # =====================================================
 # Database Migrations
@@ -91,6 +102,7 @@ migrate-action:
 todoapp-run:
 	@export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
 	export POSTGRES_HOST=localhost && \
+	$(MAKE) redis-up && \
 	$(MAKE) env-postgres-up && \
 	$(MAKE) env-port-forward && \
 	$(MAKE) observability-up && \
@@ -211,7 +223,6 @@ test-e2e-api:
 
 test-observability:
 	@go run ./tests/e2e/observability
-
 
 # Run load-testing profiles against an already running application.
 # Usage: make test-load [PROFILE=standard|ramp-up|steady-state|stress|all]
