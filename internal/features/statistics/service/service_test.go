@@ -215,5 +215,5 @@ func TestGetStatisticsReturnsRepositoryError(t *testing.T) {
 }
 
 func newStatisticsServiceForTest(repository StatisticsRepository) *StatisticsService {
-	return NewStatisticsService(repository, noop.NewTracerProvider())
+	return NewStatisticsService(repository, nil, noop.NewTracerProvider())
 }

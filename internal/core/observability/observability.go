@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	redisotel_native "github.com/redis/go-redis/extra/redisotel-native/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -25,6 +26,8 @@ type Observability struct {
 	propagators    propagation.TextMapPropagator
 
 	activeRequests metric.Int64UpDownCounter
+
+	redisMetrics *redisotel_native.ObservabilityInstance
 }
 
 func New(ctx context.Context, config Config) (*Observability, error) {
@@ -182,10 +185,26 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 		return nil
 	}
 
-	return shutdownProviders(
-		ctx,
-		o.tracerProvider,
-		o.meterProvider,
+	var shutdownErr error
+
+	if o.redisMetrics != nil {
+		if err := o.redisMetrics.Shutdown(); err != nil {
+			shutdownErr = errors.Join(
+				shutdownErr,
+				fmt.Errorf("shutdown Redis metrics: %w", err),
+			)
+		}
+
+		o.redisMetrics = nil
+	}
+
+	return errors.Join(
+		shutdownErr,
+		shutdownProviders(
+			ctx,
+			o.tracerProvider,
+			o.meterProvider,
+		),
 	)
 }
 

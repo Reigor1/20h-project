@@ -51,7 +51,7 @@ func newTracingTestProvider(
 func TestGetStatisticsCreatesChildSpanAndPassesContextToRepository(t *testing.T) {
 	tracerProvider, exporter := newTracingTestProvider(t)
 	repository := &tracingStatisticsRepository{}
-	service := NewStatisticsService(repository, tracerProvider)
+	service := NewStatisticsService(repository, nil, tracerProvider)
 
 	rootCtx, rootSpan := tracerProvider.Tracer("statistics-service-tracing-test").Start(
 		context.Background(),
@@ -104,7 +104,7 @@ func TestGetStatisticsCreatesChildSpanAndPassesContextToRepository(t *testing.T)
 func TestGetStatisticsMarksSpanErrorForInvalidDateRange(t *testing.T) {
 	tracerProvider, exporter := newTracingTestProvider(t)
 	repository := &tracingStatisticsRepository{}
-	service := NewStatisticsService(repository, tracerProvider)
+	service := NewStatisticsService(repository, nil, tracerProvider)
 
 	from := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	to := from
