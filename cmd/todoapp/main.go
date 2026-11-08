@@ -15,8 +15,11 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 	core_observability_postgres "github.com/Reigor1/20h-project/internal/core/observability/postgres"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
+	core_redis "github.com/Reigor1/20h-project/internal/core/repository/redis"
+	core_redis_v9 "github.com/Reigor1/20h-project/internal/core/repository/redis/redis_v9"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
+	statistics_redis_cache "github.com/Reigor1/20h-project/internal/features/statistics/cache/redis"
 	statistics_postgres_repository "github.com/Reigor1/20h-project/internal/features/statistics/repository/postgres"
 	statistics_service "github.com/Reigor1/20h-project/internal/features/statistics/service"
 	statistics_transport_http "github.com/Reigor1/20h-project/internal/features/statistics/transport/http"
@@ -90,11 +93,24 @@ func run() (runErr error) {
 	// Observability owns the MeterProvider and its registrations.
 	// Shutdown it before closing the pool so the final metric collection
 	// can still read pgxpool.Stat().
-	var pool *core_pgx_pool.Pool
+	var (
+		pool  *core_pgx_pool.Pool
+		cache core_redis.Cache
+	)
 
 	defer func() {
 		// Stop application work before shutting down its dependencies.
 		cancel()
+
+		if cache != nil {
+			if err := cache.Close(); err != nil {
+				logger.Warn("Redis shutdown failed", zap.Error(err))
+				runErr = errors.Join(
+					runErr,
+					fmt.Errorf("close Redis cache: %w", err),
+				)
+			}
+		}
 
 		shutdownCtx, shutdownCancel := context.WithTimeout(
 			context.Background(),
@@ -140,6 +156,27 @@ func run() (runErr error) {
 		return fmt.Errorf("register PostgreSQL pool metrics: %w", err)
 	}
 
+	logger.Debug("initializing Redis cache")
+
+	redisConfig, err := core_redis_v9.NewConfig()
+	if err != nil {
+		logger.Warn(
+			"Redis configuration is invalid; cache is disabled",
+			zap.Error(err),
+		)
+	} else {
+		redisClient, err := core_redis_v9.NewRedis(ctx, redisConfig)
+		if err != nil {
+			logger.Warn(
+				"Redis is unavailable; continuing without cache",
+				zap.Error(err),
+			)
+		} else {
+			cache = redisClient
+			logger.Info("Redis cache initialized")
+		}
+	}
+
 	logger.Debug("initializing feature", zap.String("feature", "users"))
 
 	usersRepository := users_postgres_repository.NewUsersRepository(pool)
@@ -160,9 +197,16 @@ func run() (runErr error) {
 
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
 
+	var statisticsCache statistics_service.StatisticsCache
+
+	if cache != nil {
+		statisticsCache = statistics_redis_cache.NewStatisticsCache(cache)
+	}
+
 	statisticsRepository := statistics_postgres_repository.NewStatisticsRepository(pool)
 	statisticsService := statistics_service.NewStatisticsService(
 		statisticsRepository,
+		statisticsCache,
 		observability.TracerProvider(),
 	)
 	statisticsTransportHTTP := statistics_transport_http.NewStatisticsHTTPHandler(statisticsService)

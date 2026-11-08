@@ -102,7 +102,7 @@ migrate-action:
 todoapp-run:
 	@export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
 	export POSTGRES_HOST=localhost && \
-	$(MAKE) redis-up && \
+	$(MAKE) env-redis-up && \
 	$(MAKE) env-postgres-up && \
 	$(MAKE) env-port-forward && \
 	$(MAKE) observability-up && \

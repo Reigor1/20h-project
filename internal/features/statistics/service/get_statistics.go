@@ -20,12 +20,24 @@ func (s *StatisticsService) GetStatistics(
 	defer span.End()
 
 	if from != nil && to != nil {
-		core_observability.MarkSpanError(span, "statistics.get")
 		if to.Before(*from) || to.Equal(*from) {
+			core_observability.MarkSpanError(span, "statistics.get")
 			return domain.Statistics{}, fmt.Errorf(
 				"`to` must be after `from`: %w",
 				core_errors.ErrInvalidArgument,
 			)
+		}
+	}
+
+	cacheable := userID == nil && from == nil && to == nil
+
+	if cacheable && s.cache != nil {
+		statistics, found, err := s.cache.Get(ctx)
+
+		if err != nil {
+			span.RecordError(fmt.Errorf("get statistics from cache: %w", err))
+		} else if found {
+			return statistics, nil
 		}
 	}
 
@@ -36,6 +48,12 @@ func (s *StatisticsService) GetStatistics(
 	}
 
 	statistics := calcStatistics(tasks)
+
+	if cacheable && s.cache != nil {
+        if err := s.cache.Set(ctx, statistics, globalStatisticsCacheTTL); err != nil {
+            span.RecordError(fmt.Errorf("set statistics cache: %w", err))
+        }
+    }
 
 	return statistics, nil
 }
