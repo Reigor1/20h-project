@@ -165,7 +165,18 @@ func run() (runErr error) {
 			zap.Error(err),
 		)
 	} else {
-		redisClient, err := core_redis_v9.NewRedis(ctx, redisConfig)
+		if err := observability.InstrumentRedisMetrics(); err != nil {
+			logger.Warn(
+				"Redis metrics instrumentation failed",
+				zap.Error(err),
+			)
+		}
+
+		redisClient, err := core_redis_v9.NewRedis(
+			ctx,
+			redisConfig,
+			observability.TracerProvider(),
+		)
 		if err != nil {
 			logger.Warn(
 				"Redis is unavailable; continuing without cache",

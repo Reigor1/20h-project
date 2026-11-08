@@ -8,7 +8,10 @@ import (
 	"time"
 
 	core_redis "github.com/Reigor1/20h-project/internal/core/repository/redis"
+	redisotel "github.com/redis/go-redis/extra/redisotel/v9"
 	redis "github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Redis implements the shared Cache contract using go-redis/v9.
@@ -25,7 +28,11 @@ var _ core_redis.Cache = (*Redis)(nil)
 // A failed initial connection is returned to the caller; the application
 // bootstrap decides whether Redis failure is fatal or whether cache use
 // should be disabled while the application continues to run.
-func NewRedis(ctx context.Context, config Config) (*Redis, error) {
+func NewRedis(
+	ctx context.Context,
+	config Config,
+	tracerProvider trace.TracerProvider,
+) (*Redis, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:                  config.Addr,
 		Username:              config.Username,
@@ -36,6 +43,28 @@ func NewRedis(ctx context.Context, config Config) (*Redis, error) {
 		WriteTimeout:          config.Timeout,
 		ContextTimeoutEnabled: true,
 	})
+
+	if tracerProvider != nil {
+		if err := redisotel.InstrumentTracing(
+			client,
+			redisotel.WithTracerProvider(tracerProvider),
+			redisotel.WithDBStatement(false),
+			redisotel.WithCallerEnabled(false),
+			redisotel.WithAttributes(
+				attribute.String("db.client.connection.pool.name", "primary"),
+			),
+		); err != nil {
+			closeErr := client.Close()
+			if closeErr != nil {
+				err = errors.Join(
+					err,
+					fmt.Errorf("close Redis client after instrumentation failure: %w", closeErr),
+				)
+			}
+
+			return nil, fmt.Errorf("instrument Redis tracing: %w", err)
+		}
+	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()

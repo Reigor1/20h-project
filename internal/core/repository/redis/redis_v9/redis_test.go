@@ -10,6 +10,7 @@ import (
 
 	core_redis "github.com/Reigor1/20h-project/internal/core/repository/redis"
 	"github.com/alicebob/miniredis/v2"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestRedisGetSetDelete(t *testing.T) {
@@ -92,7 +93,7 @@ func TestNewRedisFailsWhenInitialPingCannotReachServer(t *testing.T) {
 	cache, err := NewRedis(context.Background(), Config{
 		Addr:    addr,
 		Timeout: 250 * time.Millisecond,
-	})
+	}, noop.NewTracerProvider())
 	if err == nil {
 		if cache != nil {
 			_ = cache.Close()
@@ -122,7 +123,7 @@ func newTestRedis(t *testing.T, addr string) *Redis {
 	cache, err := NewRedis(context.Background(), Config{
 		Addr:    addr,
 		Timeout: time.Second,
-	})
+	}, noop.NewTracerProvider())
 	if err != nil {
 		t.Fatalf("NewRedis() error = %v, want nil", err)
 	}
