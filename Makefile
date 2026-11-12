@@ -94,6 +94,35 @@ migrate-action:
 
 
 # =====================================================
+# Kafka
+# =====================================================
+
+# Start all three Kafka brokers and wait until they are healthy.
+kafka-up:
+	@docker compose up -d --wait --wait-timeout 180 kafka-1 kafka-2 kafka-3
+
+# Stop Kafka brokers without deleting their persistent volumes.
+kafka-down:
+	@docker compose stop kafka-1 kafka-2 kafka-3
+
+# Display broker status, KRaft quorum and broker API versions.
+kafka-status:
+	@docker compose ps kafka-1 kafka-2 kafka-3
+	@docker compose exec -T kafka-1 \
+		/opt/kafka/bin/kafka-metadata-quorum.sh \
+		--bootstrap-server kafka-1:19092 describe --status
+	@docker compose exec -T kafka-1 \
+		/opt/kafka/bin/kafka-cluster.sh \
+		api-versions --bootstrap-server kafka-1:19092
+
+# List all Kafka topics.
+kafka-topics:
+	@docker compose exec -T kafka-1 \
+		/opt/kafka/bin/kafka-topics.sh \
+		--bootstrap-server kafka-1:19092 --list
+
+
+# =====================================================
 # Application
 # =====================================================
 
