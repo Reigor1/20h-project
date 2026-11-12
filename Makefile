@@ -97,6 +97,10 @@ migrate-action:
 # Kafka
 # =====================================================
 
+# -----------------------------------------------------
+# Kafka Cluster
+# -----------------------------------------------------
+
 # Start all three Kafka brokers and wait until they are healthy.
 kafka-up:
 	@docker compose up -d --wait --wait-timeout 180 kafka-1 kafka-2 kafka-3
@@ -115,11 +119,88 @@ kafka-status:
 		/opt/kafka/bin/kafka-cluster.sh \
 		api-versions --bootstrap-server kafka-1:19092
 
+# -----------------------------------------------------
+# Kafka Topics
+# -----------------------------------------------------
+
+KAFKA_BOOTSTRAP_SERVER ?= kafka-1:19092
+KAFKA_CLI_SERVICE ?= kafka-1
+
+KAFKA_TOPICS_CLI = docker compose exec -T $(KAFKA_CLI_SERVICE) \
+	/opt/kafka/bin/kafka-topics.sh \
+	--bootstrap-server $(KAFKA_BOOTSTRAP_SERVER)
+
+KAFKA_CONFIGS_CLI = docker compose exec -T $(KAFKA_CLI_SERVICE) \
+	/opt/kafka/bin/kafka-configs.sh \
+	--bootstrap-server $(KAFKA_BOOTSTRAP_SERVER)
+
+.PHONY: kafka-topics-create kafka-topics-configure kafka-topics-setup
+.PHONY: kafka-topics kafka-topics-describe kafka-topics-config
+
 # List all Kafka topics.
 kafka-topics:
-	@docker compose exec -T kafka-1 \
-		/opt/kafka/bin/kafka-topics.sh \
-		--bootstrap-server kafka-1:19092 --list
+	@$(KAFKA_TOPICS_CLI) --list
+
+# Create the application event topics.
+# Existing topics are not recreated.
+kafka-topics-create:
+	@$(KAFKA_TOPICS_CLI) \
+		--create \
+		--if-not-exists \
+		--topic task-events \
+		--partitions 3 \
+		--replication-factor 3 \
+		--config cleanup.policy=delete \
+		--config retention.ms=604800000 \
+		--config min.insync.replicas=2 \
+		--config unclean.leader.election.enable=false
+
+	@$(KAFKA_TOPICS_CLI) \
+		--create \
+		--if-not-exists \
+		--topic task-events.dlq \
+		--partitions 3 \
+		--replication-factor 3 \
+		--config cleanup.policy=delete \
+		--config retention.ms=2592000000 \
+		--config min.insync.replicas=2 \
+		--config unclean.leader.election.enable=false
+
+# Apply the required configuration to existing topics.
+kafka-topics-configure:
+	@$(KAFKA_CONFIGS_CLI) \
+		--entity-type topics \
+		--entity-name task-events \
+		--alter \
+		--add-config cleanup.policy=delete,retention.ms=604800000,min.insync.replicas=2,unclean.leader.election.enable=false
+
+	@$(KAFKA_CONFIGS_CLI) \
+		--entity-type topics \
+		--entity-name task-events.dlq \
+		--alter \
+		--add-config cleanup.policy=delete,retention.ms=2592000000,min.insync.replicas=2,unclean.leader.election.enable=false
+
+# Create topics and enforce their configuration.
+kafka-topics-setup:
+	@$(MAKE) kafka-topics-create
+	@$(MAKE) kafka-topics-configure
+
+# Display partition, leader, replica and ISR information.
+kafka-topics-describe:
+	@$(KAFKA_TOPICS_CLI) --describe --topic task-events
+	@$(KAFKA_TOPICS_CLI) --describe --topic task-events.dlq
+
+# Display topic-level configuration.
+kafka-topics-config:
+	@$(KAFKA_CONFIGS_CLI) \
+		--entity-type topics \
+		--entity-name task-events \
+		--describe
+
+	@$(KAFKA_CONFIGS_CLI) \
+		--entity-type topics \
+		--entity-name task-events.dlq \
+		--describe
 
 
 # =====================================================
