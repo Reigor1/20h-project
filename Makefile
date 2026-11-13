@@ -253,6 +253,7 @@ tests-integration:
 	@$(MAKE) test-integration-users-postgres
 	@$(MAKE) test-integration-tasks-postgres
 	@$(MAKE) test-integration-statistics-postgres
+	@$(MAKE) test-integration-events-migrations
 
 # Run PostgreSQL connection pool integration tests.
 # Start the test database, load test environment variables,
@@ -302,6 +303,17 @@ test-integration-statistics-postgres:
 		go test -count=1 -v -run \
 			'^TestStatisticsRepositoryIntegration$$' \
 			${PROJECT_ROOT}/tests/integration/features/statistics/repository/; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
+		exit $$test_status
+
+# Run event storage migration integration tests.
+# Apply the real migration sequence and verify unique event constraints.
+test-integration-events-migrations:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		go test -count=1 -v \
+			${PROJECT_ROOT}/tests/integration/features/events/migrations; \
 		test_status=$$?; \
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status

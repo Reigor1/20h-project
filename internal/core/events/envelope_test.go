@@ -36,25 +36,40 @@ func TestMarshalAndUnmarshal(t *testing.T) {
 		t.Fatalf("Unmarshal() error = %v, want nil", err)
 	}
 
-	var gotPayload, wantPayload bytes.Buffer
-
-	if err := json.Compact(&gotPayload, got.Payload); err != nil {
-		t.Fatalf("Compact(got.Payload) error = %v", err)
+	if got.EventID != want.EventID {
+		t.Errorf("EventID = %q, want %q", got.EventID, want.EventID)
 	}
 
-	if err := json.Compact(&wantPayload, want.Payload); err != nil {
-		t.Fatalf("Compact(want.Payload) error = %v", err)
+	if got.EventType != want.EventType {
+		t.Errorf("EventType = %q, want %q", got.EventType, want.EventType)
 	}
 
-	if got.EventID != want.EventID ||
-		got.EventType != want.EventType ||
-		got.SchemaVersion != want.SchemaVersion ||
-		!got.OccurredAt.Equal(want.OccurredAt) ||
-		got.AggregateType != want.AggregateType ||
-		got.AggregateID != want.AggregateID ||
-		got.AggregateVersion != want.AggregateVersion ||
-		gotPayload.String() != wantPayload.String() {
-		t.Fatalf("Unmarshal() = %+v, want %+v", got, want)
+	if got.SchemaVersion != want.SchemaVersion {
+		t.Errorf("SchemaVersion = %d, want %d", got.SchemaVersion, want.SchemaVersion)
+	}
+
+	if !got.OccurredAt.Equal(want.OccurredAt) {
+		t.Errorf("OccurredAt = %v, want %v", got.OccurredAt, want.OccurredAt)
+	}
+
+	if got.AggregateType != want.AggregateType {
+		t.Errorf("AggregateType = %q, want %q", got.AggregateType, want.AggregateType)
+	}
+
+	if got.AggregateID != want.AggregateID {
+		t.Errorf("AggregateID = %d, want %d", got.AggregateID, want.AggregateID)
+	}
+
+	if got.AggregateVersion != want.AggregateVersion {
+		t.Errorf(
+			"AggregateVersion = %d, want %d",
+			got.AggregateVersion,
+			want.AggregateVersion,
+		)
+	}
+
+	if compactJSON(t, got.Payload) != compactJSON(t, want.Payload) {
+		t.Errorf("Payload = %s, want %s", got.Payload, want.Payload)
 	}
 }
 
@@ -68,6 +83,13 @@ func TestEnvelopeValidate(t *testing.T) {
 			name: "invalid event ID",
 			modify: func(e *Envelope) {
 				e.EventID = "invalid"
+			},
+			wantErr: ErrInvalidEnvelope,
+		},
+		{
+			name: "zero event ID",
+			modify: func(e *Envelope) {
+				e.EventID = "00000000-0000-0000-0000-000000000000"
 			},
 			wantErr: ErrInvalidEnvelope,
 		},
@@ -93,16 +115,65 @@ func TestEnvelopeValidate(t *testing.T) {
 			wantErr: ErrInvalidEnvelope,
 		},
 		{
-			name: "unknown schema version",
+			name: "unsupported schema version",
 			modify: func(e *Envelope) {
 				e.SchemaVersion = 2
 			},
 			wantErr: ErrUnsupportedSchemaVersion,
 		},
 		{
-			name: "invalid payload",
+			name: "missing occurred at",
+			modify: func(e *Envelope) {
+				e.OccurredAt = time.Time{}
+			},
+			wantErr: ErrInvalidEnvelope,
+		},
+		{
+			name: "unsupported aggregate type",
+			modify: func(e *Envelope) {
+				e.AggregateType = "user"
+			},
+			wantErr: ErrInvalidEnvelope,
+		},
+		{
+			name: "invalid aggregate ID",
+			modify: func(e *Envelope) {
+				e.AggregateID = 0
+			},
+			wantErr: ErrInvalidEnvelope,
+		},
+		{
+			name: "invalid aggregate version",
+			modify: func(e *Envelope) {
+				e.AggregateVersion = 0
+			},
+			wantErr: ErrInvalidEnvelope,
+		},
+		{
+			name: "missing payload",
+			modify: func(e *Envelope) {
+				e.Payload = nil
+			},
+			wantErr: ErrInvalidEnvelope,
+		},
+		{
+			name: "invalid payload JSON",
 			modify: func(e *Envelope) {
 				e.Payload = json.RawMessage(`{invalid}`)
+			},
+			wantErr: ErrInvalidEnvelope,
+		},
+		{
+			name: "null payload",
+			modify: func(e *Envelope) {
+				e.Payload = json.RawMessage(`null`)
+			},
+			wantErr: ErrInvalidEnvelope,
+		},
+		{
+			name: "array payload",
+			modify: func(e *Envelope) {
+				e.Payload = json.RawMessage(`[]`)
 			},
 			wantErr: ErrInvalidEnvelope,
 		},
@@ -124,4 +195,66 @@ func TestEnvelopeValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMarshalRejectsInvalidEnvelope(t *testing.T) {
+	envelope := validEnvelope()
+	envelope.SchemaVersion = 2
+
+	_, err := Marshal(envelope)
+
+	if !errors.Is(err, ErrUnsupportedSchemaVersion) {
+		t.Fatalf(
+			"Marshal() error = %v, want ErrUnsupportedSchemaVersion",
+			err,
+		)
+	}
+}
+
+func TestUnmarshalRejectsUnsupportedSchemaVersion(t *testing.T) {
+	data, err := json.Marshal(validEnvelope())
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var rawEnvelope map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawEnvelope); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	rawEnvelope["schema_version"] = json.RawMessage(`2`)
+
+	data, err = json.Marshal(rawEnvelope)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	_, err = Unmarshal(data)
+
+	if !errors.Is(err, ErrUnsupportedSchemaVersion) {
+		t.Fatalf(
+			"Unmarshal() error = %v, want ErrUnsupportedSchemaVersion",
+			err,
+		)
+	}
+}
+
+func TestUnmarshalRejectsMalformedJSON(t *testing.T) {
+	_, err := Unmarshal([]byte(`{"event_id":`))
+
+	if err == nil {
+		t.Fatal("Unmarshal() error = nil, want JSON decoding error")
+	}
+}
+
+func compactJSON(t *testing.T, data []byte) string {
+	t.Helper()
+
+	var compact bytes.Buffer
+
+	if err := json.Compact(&compact, data); err != nil {
+		t.Fatalf("compact JSON: %v", err)
+	}
+
+	return compact.String()
 }

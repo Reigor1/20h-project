@@ -13,7 +13,8 @@ CREATE TABLE todoapp.task_activity (
 
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT task_activity_event_id_unique UNIQUE (event_id),
+    CONSTRAINT task_activity_event_id_unique
+        UNIQUE (event_id),
 
     CONSTRAINT task_activity_task_id_positive
         CHECK (task_id > 0),

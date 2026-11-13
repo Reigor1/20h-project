@@ -41,11 +41,11 @@ type Envelope struct {
 }
 
 func (e Envelope) Validate() error {
-	if _, err := uuid.Parse(e.EventID); err != nil {
+	eventID, err := uuid.Parse(e.EventID)
+	if err != nil || eventID == uuid.Nil {
 		return fmt.Errorf(
-			"%w: invalid event_id: %v",
+			"%w: event_id must be a non-zero UUID",
 			ErrInvalidEnvelope,
-			err,
 		)
 	}
 
@@ -62,7 +62,7 @@ func (e Envelope) Validate() error {
 		)
 	}
 
-	if e.SchemaVersion < 1 {
+	if e.SchemaVersion <= 0 {
 		return fmt.Errorf(
 			"%w: schema_version must be positive",
 			ErrInvalidEnvelope,
@@ -107,14 +107,14 @@ func (e Envelope) Validate() error {
 		)
 	}
 
-	var payload map[string]json.RawMessage
-
 	if len(e.Payload) == 0 {
 		return fmt.Errorf(
 			"%w: payload is required",
 			ErrInvalidEnvelope,
 		)
 	}
+
+	var payload map[string]json.RawMessage
 
 	if err := json.Unmarshal(e.Payload, &payload); err != nil || payload == nil {
 		return fmt.Errorf(
