@@ -39,6 +39,11 @@ func TestMapErrors(t *testing.T) {
 			input:   ordinaryError,
 			wantErr: core_postgres_pool.ErrUnknown,
 		},
+		{
+			name:    "nil error remains nil",
+			input:   nil,
+			wantErr: nil,
+		},
 	}
 
 	for _, testCase := range tests {

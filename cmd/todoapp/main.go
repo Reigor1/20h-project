@@ -19,6 +19,7 @@ import (
 	core_redis_v9 "github.com/Reigor1/20h-project/internal/core/repository/redis/redis_v9"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
+	outbox_postgres_repository "github.com/Reigor1/20h-project/internal/features/outbox/repository"
 	statistics_redis_cache "github.com/Reigor1/20h-project/internal/features/statistics/cache/redis"
 	statistics_postgres_repository "github.com/Reigor1/20h-project/internal/features/statistics/repository/postgres"
 	statistics_service "github.com/Reigor1/20h-project/internal/features/statistics/service"
@@ -199,7 +200,12 @@ func run() (runErr error) {
 
 	logger.Debug("initializing feature", zap.String("feature", "tasks"))
 
-	tasksRepository := tasks_postgres_repository.NewTasksRepository(pool)
+	outboxRepository := outbox_postgres_repository.NewOutboxRepository()
+
+	tasksRepository := tasks_postgres_repository.NewTasksRepository(
+		pool,
+		outboxRepository,
+	)
 	tasksService := tasks_service.NewTasksService(
 		tasksRepository,
 		observability.TracerProvider(),

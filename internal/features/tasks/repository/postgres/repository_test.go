@@ -2,6 +2,7 @@ package tasks_postgres_repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
+	core_events "github.com/Reigor1/20h-project/internal/core/events"
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
@@ -18,9 +20,14 @@ type repositoryTestPool struct {
 	t *testing.T
 
 	operationTimeout time.Duration
-	queryCalls       int
-	queryRowCalls    int
-	execCalls        int
+	beginCalls       int
+	beginError       error
+	transaction      *repositoryTestTransaction
+	beginContext     context.Context
+
+	queryCalls    int
+	queryRowCalls int
+	execCalls     int
 
 	queryResult core_postgres_pool.Rows
 	queryError  error
@@ -43,7 +50,24 @@ func newRepositoryTestPool(t *testing.T) *repositoryTestPool {
 	return &repositoryTestPool{
 		t:                t,
 		operationTimeout: testutil.RepositoryOperationTimeout,
+		transaction: &repositoryTestTransaction{
+			t:          t,
+			execResult: repositoryTestCommandTag{rowsAffected: 1},
+		},
 	}
+}
+
+func (p *repositoryTestPool) Begin(ctx context.Context) (core_postgres_pool.Transaction, error) {
+	p.beginCalls++
+	p.beginContext = ctx
+	if p.beginError != nil {
+		return nil, p.beginError
+	}
+	if p.transaction == nil {
+		p.t.Fatal("pool Begin() has no configured transaction")
+	}
+
+	return p.transaction, nil
 }
 
 func (p *repositoryTestPool) Query(
@@ -113,6 +137,166 @@ func (p *repositoryTestPool) assertNoPreviousPoolCall(method string) {
 	if totalCalls != 0 {
 		p.t.Fatalf("unexpected additional pool %s call", method)
 	}
+}
+
+type repositoryTestTransaction struct {
+	t *testing.T
+
+	queryCalls    int
+	queryRowCalls int
+	execCalls     int
+
+	queryResult core_postgres_pool.Rows
+	queryError  error
+	rowResult   core_postgres_pool.Row
+	execResult  core_postgres_pool.CommandTag
+	execError   error
+
+	commitCalls   int
+	commitError   error
+	rollbackCalls int
+	rollbackError error
+
+	gotQuerySQL  string
+	gotQueryArgs []any
+	gotRowSQL    string
+	gotRowArgs   []any
+	gotExecSQL   string
+	gotExecArgs  []any
+	gotQueryCtx  context.Context
+	gotRowCtx    context.Context
+	gotExecCtx   context.Context
+	commitCtx    context.Context
+	rollbackCtx  context.Context
+	callOrder    []string
+}
+
+func (tx *repositoryTestTransaction) Query(
+	ctx context.Context,
+	sql string,
+	args ...any,
+) (core_postgres_pool.Rows, error) {
+	tx.queryCalls++
+	tx.gotQueryCtx = ctx
+	tx.gotQuerySQL = sql
+	tx.gotQueryArgs = append([]any(nil), args...)
+	tx.callOrder = append(tx.callOrder, "query")
+
+	if tx.queryResult == nil && tx.queryError == nil {
+		tx.t.Fatal("transaction Query() has no configured result or error")
+	}
+
+	return tx.queryResult, tx.queryError
+}
+
+func (tx *repositoryTestTransaction) QueryRow(
+	ctx context.Context,
+	sql string,
+	args ...any,
+) core_postgres_pool.Row {
+	tx.queryRowCalls++
+	tx.gotRowCtx = ctx
+	tx.gotRowSQL = sql
+	tx.gotRowArgs = append([]any(nil), args...)
+	tx.callOrder = append(tx.callOrder, "query_row")
+
+	if tx.rowResult == nil {
+		tx.t.Fatal("transaction QueryRow() has no configured row result")
+	}
+
+	return tx.rowResult
+}
+
+func (tx *repositoryTestTransaction) Exec(
+	ctx context.Context,
+	sql string,
+	args ...any,
+) (core_postgres_pool.CommandTag, error) {
+	tx.execCalls++
+	tx.gotExecCtx = ctx
+	tx.gotExecSQL = sql
+	tx.gotExecArgs = append([]any(nil), args...)
+	tx.callOrder = append(tx.callOrder, "exec")
+
+	if tx.execResult == nil && tx.execError == nil {
+		tx.t.Fatal("transaction Exec() has no configured result or error")
+	}
+
+	return tx.execResult, tx.execError
+}
+
+func (tx *repositoryTestTransaction) Commit(ctx context.Context) error {
+	tx.commitCalls++
+	tx.commitCtx = ctx
+	tx.callOrder = append(tx.callOrder, "commit")
+	return tx.commitError
+}
+
+func (tx *repositoryTestTransaction) Rollback(ctx context.Context) error {
+	tx.rollbackCalls++
+	tx.rollbackCtx = ctx
+	tx.callOrder = append(tx.callOrder, "rollback")
+	return tx.rollbackError
+}
+
+type repositoryTestOutboxRepository struct {
+	calls int
+	err   error
+
+	gotContext  context.Context
+	gotExecutor core_postgres_pool.Executor
+	gotEvent    core_events.Envelope
+}
+
+func (r *repositoryTestOutboxRepository) Create(
+	ctx context.Context,
+	executor core_postgres_pool.Executor,
+	event core_events.Envelope,
+) error {
+	r.calls++
+	r.gotContext = ctx
+	r.gotExecutor = executor
+	r.gotEvent = event
+
+	if r.err != nil {
+		return r.err
+	}
+
+	_, err := executor.Exec(
+		ctx,
+		`INSERT INTO todoapp.outbox (
+			event_id,
+			event_type,
+			schema_version,
+			aggregate_type,
+			aggregate_id,
+			aggregate_version,
+			occurred_at,
+			payload
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+		event.EventID,
+		string(event.EventType),
+		event.SchemaVersion,
+		event.AggregateType,
+		event.AggregateID,
+		event.AggregateVersion,
+		event.OccurredAt,
+		event.Payload,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func newTasksRepositoryForTest(
+	pool *repositoryTestPool,
+) (*TasksRepository, *repositoryTestOutboxRepository) {
+	outboxRepository := &repositoryTestOutboxRepository{}
+	repository := NewTasksRepository(pool, outboxRepository)
+
+	return repository, outboxRepository
 }
 
 type repositoryTestRow struct {
@@ -223,13 +407,17 @@ func (tag repositoryTestCommandTag) RowsAffected() int64 {
 	return tag.rowsAffected
 }
 
-func TestNewTasksRepositoryStoresPool(t *testing.T) {
+func TestNewTasksRepositoryStoresPoolAndOutboxRepository(t *testing.T) {
 	pool := newRepositoryTestPool(t)
+	outboxRepository := &repositoryTestOutboxRepository{}
 
-	repository := NewTasksRepository(pool)
+	repository := NewTasksRepository(pool, outboxRepository)
 
 	if repository.pool != pool {
 		t.Fatal("NewTasksRepository() did not retain the supplied pool")
+	}
+	if repository.outboxRepository != outboxRepository {
+		t.Fatal("NewTasksRepository() did not retain the supplied outbox repository")
 	}
 }
 
@@ -310,38 +498,41 @@ func TestCreateTask(t *testing.T) {
 		values: []any{17, 1, "Write report", &description, true, createdAt, &completedAt, 23},
 	}
 	pool := newRepositoryTestPool(t)
-	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
 	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	got, err := repository.CreateTask(ctx, inputTask)
-
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v, want nil", err)
 	}
 	if !reflect.DeepEqual(got, wantTask) {
 		t.Fatalf("CreateTask() = %+v, want %+v", got, wantTask)
 	}
-	if pool.queryRowCalls != 1 ||
-		!strings.Contains(pool.gotRowSQL, "INSERT INTO todoapp.tasks") ||
-		!strings.Contains(pool.gotRowSQL, "RETURNING id, version") {
-		t.Fatalf("QueryRow() calls/sql = %d/%q, want one task INSERT", pool.queryRowCalls, pool.gotRowSQL)
+	if pool.beginCalls != 1 {
+		t.Fatalf("pool Begin() calls = %d, want 1", pool.beginCalls)
+	}
+	if pool.transaction.queryRowCalls != 1 ||
+		!strings.Contains(pool.transaction.gotRowSQL, "INSERT INTO todoapp.tasks") ||
+		!strings.Contains(pool.transaction.gotRowSQL, "RETURNING") {
+		t.Fatalf("transaction QueryRow() calls/sql = %d/%q, want one task INSERT", pool.transaction.queryRowCalls, pool.transaction.gotRowSQL)
 	}
 	wantArgs := []any{"Write report", &description, true, createdAt, &completedAt, 23}
-	if !reflect.DeepEqual(pool.gotRowArgs, wantArgs) {
-		t.Fatalf("QueryRow() args = %#v, want %#v", pool.gotRowArgs, wantArgs)
+	if !reflect.DeepEqual(pool.transaction.gotRowArgs, wantArgs) {
+		t.Fatalf("transaction QueryRow() args = %#v, want %#v", pool.transaction.gotRowArgs, wantArgs)
 	}
-	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
+	testutil.AssertRepositoryContext(t, pool.transaction.gotRowCtx, ctx)
 	if row.scans != 1 {
 		t.Fatalf("row Scan() calls = %d, want 1", row.scans)
 	}
+	assertOutboxEvent(t, pool, outboxRepository, core_events.EventTypeTaskCreated, wantTask, nil)
 }
 
 func TestCreateTaskMapsForeignKeyViolationToNotFound(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrViolatesForeignKey}
 	pool := newRepositoryTestPool(t)
-	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
 	task := domain.NewTask(0, 0, "Write report", nil, false, time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC), nil, 23)
 
 	_, err := repository.CreateTask(context.Background(), task)
@@ -355,20 +546,76 @@ func TestCreateTaskMapsForeignKeyViolationToNotFound(t *testing.T) {
 	if row.scans != 1 {
 		t.Fatalf("row Scan() calls = %d, want 1", row.scans)
 	}
+	if outboxRepository.calls != 0 {
+		t.Fatalf("outbox Create() calls = %d, want 0", outboxRepository.calls)
+	}
+	if pool.transaction.commitCalls != 0 || pool.transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction commit/rollback calls = %d/%d, want 0/1", pool.transaction.commitCalls, pool.transaction.rollbackCalls)
+	}
 }
 
 func TestCreateTaskReturnsScanError(t *testing.T) {
 	scanError := errors.New("returned task could not be decoded")
 	row := &repositoryTestRow{err: scanError}
 	pool := newRepositoryTestPool(t)
-	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
 	task := domain.NewTask(0, 0, "Write report", nil, false, time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC), nil, 23)
 
 	_, err := repository.CreateTask(context.Background(), task)
 
-	if !errors.Is(err, scanError) || !strings.Contains(err.Error(), "scan error") {
-		t.Fatalf("CreateTask() error = %v, want wrapped scan error", err)
+	if !errors.Is(err, scanError) || !strings.Contains(err.Error(), "insert task") {
+		t.Fatalf("CreateTask() error = %v, want wrapped insert/scan error", err)
+	}
+	if outboxRepository.calls != 0 {
+		t.Fatalf("outbox Create() calls = %d, want 0", outboxRepository.calls)
+	}
+	if pool.transaction.commitCalls != 0 || pool.transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction commit/rollback calls = %d/%d, want 0/1", pool.transaction.commitCalls, pool.transaction.rollbackCalls)
+	}
+}
+
+func TestCreateTaskReturnsBeginError(t *testing.T) {
+	beginError := errors.New("begin transaction failed")
+	pool := newRepositoryTestPool(t)
+	pool.beginError = beginError
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
+	task := domain.NewTask(0, 0, "Write report", nil, false, time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC), nil, 23)
+
+	_, err := repository.CreateTask(context.Background(), task)
+
+	if !errors.Is(err, beginError) {
+		t.Fatalf("CreateTask() error = %v, want wrapped begin error", err)
+	}
+	if outboxRepository.calls != 0 {
+		t.Fatalf("outbox Create() calls = %d, want 0", outboxRepository.calls)
+	}
+}
+
+func TestCreateTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
+	outboxError := errors.New("outbox insert failed")
+	row := &repositoryTestRow{
+		values: []any{17, 1, "Write report", (*string)(nil), false, time.Date(2026, 10, 21, 9, 15, 0, 0, time.UTC), (*time.Time)(nil), 23},
+	}
+	pool := newRepositoryTestPool(t)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
+	pool.transaction.execError = outboxError
+	task := domain.NewTask(0, 0, "Write report", nil, false, time.Date(2026, 10, 21, 9, 15, 0, 0, time.UTC), nil, 23)
+
+	_, err := repository.CreateTask(context.Background(), task)
+
+	if !errors.Is(err, outboxError) || !strings.Contains(err.Error(), "save task event") {
+		t.Fatalf("CreateTask() error = %v, want wrapped outbox error", err)
+	}
+	if outboxRepository.calls != 1 {
+		t.Fatalf("outbox Create() calls = %d, want 1", outboxRepository.calls)
+	}
+	if pool.transaction.commitCalls != 0 || pool.transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction commit/rollback calls = %d/%d, want 0/1", pool.transaction.commitCalls, pool.transaction.rollbackCalls)
+	}
+	if pool.transaction.execCalls != 1 {
+		t.Fatalf("transaction Exec() calls = %d, want 1 failed outbox INSERT", pool.transaction.execCalls)
 	}
 }
 
@@ -381,11 +628,10 @@ func TestGetTask(t *testing.T) {
 	}
 	pool := newRepositoryTestPool(t)
 	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	got, err := repository.GetTask(ctx, 42)
-
 	if err != nil {
 		t.Fatalf("GetTask() error = %v, want nil", err)
 	}
@@ -400,6 +646,9 @@ func TestGetTask(t *testing.T) {
 		t.Fatalf("QueryRow() args = %#v, want [42]", pool.gotRowArgs)
 	}
 	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
+	if pool.beginCalls != 0 {
+		t.Fatalf("pool Begin() calls = %d, want 0 for GetTask", pool.beginCalls)
+	}
 }
 
 func TestGetTaskPreservesNullDescriptionAndCompletionTime(t *testing.T) {
@@ -409,10 +658,9 @@ func TestGetTaskPreservesNullDescriptionAndCompletionTime(t *testing.T) {
 	}
 	pool := newRepositoryTestPool(t)
 	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 
 	got, err := repository.GetTask(context.Background(), 42)
-
 	if err != nil {
 		t.Fatalf("GetTask() error = %v, want nil", err)
 	}
@@ -426,7 +674,7 @@ func TestGetTaskTranslatesNoRowsToNotFound(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrNoRows}
 	pool := newRepositoryTestPool(t)
 	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 
 	_, err := repository.GetTask(context.Background(), 42)
 
@@ -443,7 +691,7 @@ func TestGetTaskReturnsScanError(t *testing.T) {
 	row := &repositoryTestRow{err: scanError}
 	pool := newRepositoryTestPool(t)
 	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 
 	_, err := repository.GetTask(context.Background(), 42)
 
@@ -465,14 +713,13 @@ func TestGetTasksFiltersByAuthorAndPreservesOrder(t *testing.T) {
 	}
 	pool := newRepositoryTestPool(t)
 	pool.queryResult = rows
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 	userID := 23
 	limit := 10
 	offset := 20
 	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	got, err := repository.GetTasks(ctx, &userID, &limit, &offset)
-
 	if err != nil {
 		t.Fatalf("GetTasks() error = %v, want nil", err)
 	}
@@ -505,10 +752,9 @@ func TestGetTasksWithoutAuthorFilterReturnsNonNilEmptySlice(t *testing.T) {
 	rows := &repositoryTestRows{}
 	pool := newRepositoryTestPool(t)
 	pool.queryResult = rows
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 
 	got, err := repository.GetTasks(context.Background(), nil, nil, nil)
-
 	if err != nil {
 		t.Fatalf("GetTasks() error = %v, want nil", err)
 	}
@@ -530,7 +776,7 @@ func TestGetTasksReturnsQueryError(t *testing.T) {
 	queryError := errors.New("query failed")
 	pool := newRepositoryTestPool(t)
 	pool.queryError = queryError
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 
 	got, err := repository.GetTasks(context.Background(), nil, nil, nil)
 
@@ -550,7 +796,7 @@ func TestGetTasksReturnsScanErrorAndClosesRows(t *testing.T) {
 	}
 	pool := newRepositoryTestPool(t)
 	pool.queryResult = rows
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 
 	_, err := repository.GetTasks(context.Background(), nil, nil, nil)
 
@@ -567,7 +813,7 @@ func TestGetTasksReturnsRowsIterationErrorAndClosesRows(t *testing.T) {
 	rows := &repositoryTestRows{rowsError: iterationError}
 	pool := newRepositoryTestPool(t)
 	pool.queryResult = rows
-	repository := NewTasksRepository(pool)
+	repository, _ := newTasksRepositoryForTest(pool)
 
 	_, err := repository.GetTasks(context.Background(), nil, nil, nil)
 
@@ -580,83 +826,166 @@ func TestGetTasksReturnsRowsIterationErrorAndClosesRows(t *testing.T) {
 }
 
 func TestPatchTask(t *testing.T) {
-	description := "Updated task details"
+	oldDescription := "Previous task details"
+	newDescription := "Updated task details"
 	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
 	completedAt := time.Date(2026, 10, 24, 9, 30, 0, 0, time.UTC)
-	inputTask := domain.NewTask(42, 5, "Publish report", &description, true, createdAt, &completedAt, 23)
+	before := domain.NewTask(42, 5, "Prepare report", &oldDescription, true, createdAt, &completedAt, 23)
+	after := domain.NewTask(42, 5, "Publish report", &newDescription, true, createdAt, &completedAt, 23)
+	wantTask := domain.NewTask(42, 6, "Publish report", &newDescription, true, createdAt, &completedAt, 23)
 	row := &repositoryTestRow{
-		values: []any{42, 6, "Publish report", &description, true, createdAt, &completedAt, 23},
+		values: []any{42, 6, "Publish report", &newDescription, true, createdAt, &completedAt, 23},
 	}
 	pool := newRepositoryTestPool(t)
-	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
 	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
-	got, err := repository.PatchTask(ctx, 42, inputTask)
-
+	got, err := repository.PatchTask(ctx, 42, before, after)
 	if err != nil {
 		t.Fatalf("PatchTask() error = %v, want nil", err)
 	}
-	wantTask := domain.NewTask(42, 6, "Publish report", &description, true, createdAt, &completedAt, 23)
 	if !reflect.DeepEqual(got, wantTask) {
 		t.Fatalf("PatchTask() = %+v, want %+v", got, wantTask)
 	}
-	if pool.queryRowCalls != 1 || !strings.Contains(pool.gotRowSQL, "UPDATE todoapp.tasks") {
-		t.Fatalf("QueryRow() calls/sql = %d/%q, want one task UPDATE", pool.queryRowCalls, pool.gotRowSQL)
+	if pool.beginCalls != 1 {
+		t.Fatalf("pool Begin() calls = %d, want 1", pool.beginCalls)
+	}
+	if pool.transaction.queryRowCalls != 1 || !strings.Contains(pool.transaction.gotRowSQL, "UPDATE todoapp.tasks") {
+		t.Fatalf("transaction QueryRow() calls/sql = %d/%q, want one task UPDATE", pool.transaction.queryRowCalls, pool.transaction.gotRowSQL)
 	}
 	for _, sqlFragment := range []string{
-		"version=version+1",
-		"WHERE id=$5 AND version=$6",
+		"version = version + 1",
+		"WHERE id = $5 AND version = $6",
 		"RETURNING",
 	} {
-		if !strings.Contains(pool.gotRowSQL, sqlFragment) {
-			t.Errorf("PatchTask() SQL = %q, missing %q", pool.gotRowSQL, sqlFragment)
+		if !strings.Contains(pool.transaction.gotRowSQL, sqlFragment) {
+			t.Errorf("PatchTask() SQL = %q, missing %q", pool.transaction.gotRowSQL, sqlFragment)
 		}
 	}
-	wantArgs := []any{"Publish report", &description, true, &completedAt, 42, 5}
-	if !reflect.DeepEqual(pool.gotRowArgs, wantArgs) {
-		t.Fatalf("QueryRow() args = %#v, want %#v", pool.gotRowArgs, wantArgs)
+	wantArgs := []any{"Publish report", &newDescription, true, &completedAt, 42, 5}
+	if !reflect.DeepEqual(pool.transaction.gotRowArgs, wantArgs) {
+		t.Fatalf("transaction QueryRow() args = %#v, want %#v", pool.transaction.gotRowArgs, wantArgs)
 	}
-	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
+	testutil.AssertRepositoryContext(t, pool.transaction.gotRowCtx, ctx)
+	assertOutboxEvent(t, pool, outboxRepository, core_events.EventTypeTaskUpdated, wantTask, &before)
+}
+
+func TestPatchTaskCreatesTaskCompletedEvent(t *testing.T) {
+	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
+	completedAt := createdAt.Add(time.Hour)
+	before := domain.NewTask(42, 5, "Finish report", nil, false, createdAt, nil, 23)
+	after := domain.NewTask(42, 5, "Finish report", nil, true, createdAt, &completedAt, 23)
+	wantTask := domain.NewTask(42, 6, "Finish report", nil, true, createdAt, &completedAt, 23)
+	row := &repositoryTestRow{
+		values: []any{42, 6, "Finish report", (*string)(nil), true, createdAt, &completedAt, 23},
+	}
+	pool := newRepositoryTestPool(t)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
+
+	got, err := repository.PatchTask(context.Background(), 42, before, after)
+	if err != nil {
+		t.Fatalf("PatchTask() error = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(got, wantTask) {
+		t.Fatalf("PatchTask() = %+v, want %+v", got, wantTask)
+	}
+	assertOutboxEvent(t, pool, outboxRepository, core_events.EventTypeTaskCompleted, wantTask, &before)
 }
 
 func TestPatchTaskPassesNilForClearedNullableFields(t *testing.T) {
+	oldDescription := "Remove this description"
 	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
-	inputTask := domain.NewTask(42, 5, "Unfinished task", nil, false, createdAt, nil, 23)
+	completedAt := createdAt.Add(time.Hour)
+	before := domain.NewTask(42, 5, "Unfinished task", &oldDescription, true, createdAt, &completedAt, 23)
+	after := domain.NewTask(42, 5, "Unfinished task", nil, false, createdAt, nil, 23)
 	row := &repositoryTestRow{
 		values: []any{42, 6, "Unfinished task", (*string)(nil), false, createdAt, (*time.Time)(nil), 23},
 	}
 	pool := newRepositoryTestPool(t)
-	pool.rowResult = row
-	repository := NewTasksRepository(pool)
+	pool.transaction.rowResult = row
+	repository, _ := newTasksRepositoryForTest(pool)
 
-	got, err := repository.PatchTask(context.Background(), 42, inputTask)
-
+	got, err := repository.PatchTask(context.Background(), 42, before, after)
 	if err != nil {
 		t.Fatalf("PatchTask() error = %v, want nil", err)
 	}
 	if got.Description != nil || got.CompletedAt != nil {
 		t.Fatalf("PatchTask() nullable fields = description %v, completedAt %v, want nil/nil", got.Description, got.CompletedAt)
 	}
-	if len(pool.gotRowArgs) != 6 || pool.gotRowArgs[1] != (*string)(nil) || pool.gotRowArgs[3] != (*time.Time)(nil) {
-		t.Fatalf("PatchTask() nullable SQL args = %#v, want nil description and completion time", pool.gotRowArgs)
+	if len(pool.transaction.gotRowArgs) != 6 ||
+		pool.transaction.gotRowArgs[1] != (*string)(nil) ||
+		pool.transaction.gotRowArgs[3] != (*time.Time)(nil) {
+		t.Fatalf("PatchTask() nullable SQL args = %#v, want nil description and completion time", pool.transaction.gotRowArgs)
+	}
+}
+
+func TestPatchTaskNoOpDoesNotStartTransaction(t *testing.T) {
+	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
+	completedAt := createdAt.Add(time.Hour)
+	description := "Unchanged task"
+	task := domain.NewTask(42, 5, "Unchanged task", &description, true, createdAt, &completedAt, 23)
+	pool := newRepositoryTestPool(t)
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
+
+	got, err := repository.PatchTask(context.Background(), 42, task, task)
+	if err != nil {
+		t.Fatalf("PatchTask() error = %v, want nil", err)
+	}
+	if !reflect.DeepEqual(got, task) {
+		t.Fatalf("PatchTask() = %+v, want unchanged task %+v", got, task)
+	}
+	if pool.beginCalls != 0 {
+		t.Fatalf("pool Begin() calls = %d, want 0 for no-op update", pool.beginCalls)
+	}
+	if outboxRepository.calls != 0 {
+		t.Fatalf("outbox Create() calls = %d, want 0 for no-op update", outboxRepository.calls)
+	}
+	if pool.transaction.queryRowCalls != 0 || pool.transaction.execCalls != 0 {
+		t.Fatalf("transaction QueryRow()/Exec() calls = %d/%d, want 0/0", pool.transaction.queryRowCalls, pool.transaction.execCalls)
+	}
+}
+
+func TestPatchTaskRejectsMismatchedTaskState(t *testing.T) {
+	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
+	before := domain.NewTask(42, 5, "Before", nil, false, createdAt, nil, 23)
+	after := domain.NewTask(43, 5, "After", nil, false, createdAt, nil, 23)
+	pool := newRepositoryTestPool(t)
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
+
+	_, err := repository.PatchTask(context.Background(), 42, before, after)
+
+	if !errors.Is(err, core_errors.ErrInvalidArgument) {
+		t.Fatalf("PatchTask() error = %v, want ErrInvalidArgument", err)
+	}
+	if pool.beginCalls != 0 || outboxRepository.calls != 0 {
+		t.Fatalf("Begin()/outbox Create() calls = %d/%d, want 0/0", pool.beginCalls, outboxRepository.calls)
 	}
 }
 
 func TestPatchTaskTranslatesNoRowsToConflict(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrNoRows}
 	pool := newRepositoryTestPool(t)
-	pool.rowResult = row
-	repository := NewTasksRepository(pool)
-	task := domain.NewTask(42, 5, "Updated task", nil, false, time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC), nil, 23)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
+	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
+	before := domain.NewTask(42, 5, "Original task", nil, false, createdAt, nil, 23)
+	after := domain.NewTask(42, 5, "Updated task", nil, false, createdAt, nil, 23)
 
-	_, err := repository.PatchTask(context.Background(), 42, task)
+	_, err := repository.PatchTask(context.Background(), 42, before, after)
 
 	if !errors.Is(err, core_errors.ErrConflict) {
 		t.Fatalf("PatchTask() error = %v, want ErrConflict", err)
 	}
-	if !strings.Contains(err.Error(), "id='42'") || !strings.Contains(err.Error(), "concurrently accessed") {
+	if !strings.Contains(err.Error(), "id=42") || !strings.Contains(err.Error(), "concurrently modified") {
 		t.Fatalf("PatchTask() error = %v, want stale update context", err)
+	}
+	if outboxRepository.calls != 0 {
+		t.Fatalf("outbox Create() calls = %d, want 0", outboxRepository.calls)
+	}
+	if pool.transaction.commitCalls != 0 || pool.transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction commit/rollback calls = %d/%d, want 0/1", pool.transaction.commitCalls, pool.transaction.rollbackCalls)
 	}
 }
 
@@ -664,64 +993,275 @@ func TestPatchTaskReturnsScanError(t *testing.T) {
 	scanError := errors.New("updated task could not be decoded")
 	row := &repositoryTestRow{err: scanError}
 	pool := newRepositoryTestPool(t)
-	pool.rowResult = row
-	repository := NewTasksRepository(pool)
-	task := domain.NewTask(42, 5, "Updated task", nil, false, time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC), nil, 23)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
+	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
+	before := domain.NewTask(42, 5, "Original task", nil, false, createdAt, nil, 23)
+	after := domain.NewTask(42, 5, "Updated task", nil, false, createdAt, nil, 23)
 
-	_, err := repository.PatchTask(context.Background(), 42, task)
+	_, err := repository.PatchTask(context.Background(), 42, before, after)
 
-	if !errors.Is(err, scanError) || !strings.Contains(err.Error(), "scan error") {
-		t.Fatalf("PatchTask() error = %v, want wrapped scan error", err)
+	if !errors.Is(err, scanError) || !strings.Contains(err.Error(), "update task") {
+		t.Fatalf("PatchTask() error = %v, want wrapped update/scan error", err)
+	}
+	if outboxRepository.calls != 0 {
+		t.Fatalf("outbox Create() calls = %d, want 0", outboxRepository.calls)
+	}
+}
+
+func TestPatchTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
+	outboxError := errors.New("outbox insert failed")
+	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
+	before := domain.NewTask(42, 5, "Original task", nil, false, createdAt, nil, 23)
+	after := domain.NewTask(42, 5, "Updated task", nil, false, createdAt, nil, 23)
+	row := &repositoryTestRow{
+		values: []any{42, 6, "Updated task", (*string)(nil), false, createdAt, (*time.Time)(nil), 23},
+	}
+	pool := newRepositoryTestPool(t)
+	pool.transaction.rowResult = row
+	repository, _ := newTasksRepositoryForTest(pool)
+	pool.transaction.execError = outboxError
+
+	_, err := repository.PatchTask(context.Background(), 42, before, after)
+
+	if !errors.Is(err, outboxError) || !strings.Contains(err.Error(), "save task update event") {
+		t.Fatalf("PatchTask() error = %v, want wrapped outbox error", err)
+	}
+	if pool.transaction.commitCalls != 0 || pool.transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction commit/rollback calls = %d/%d, want 0/1", pool.transaction.commitCalls, pool.transaction.rollbackCalls)
 	}
 }
 
 func TestDeleteTask(t *testing.T) {
+	createdAt := time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC)
+	description := "Delete this task after preserving its snapshot"
+	completedAt := createdAt.Add(time.Hour)
+	deletedTask := domain.NewTask(42, 7, "Delete task", &description, true, createdAt, &completedAt, 23)
+	row := &repositoryTestRow{
+		values: []any{42, 7, "Delete task", &description, true, createdAt, &completedAt, 23},
+	}
 	pool := newRepositoryTestPool(t)
-	pool.execResult = repositoryTestCommandTag{rowsAffected: 1}
-	repository := NewTasksRepository(pool)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
 	ctx := context.WithValue(context.Background(), testutil.RepositoryContextKey{}, "request")
 
 	err := repository.DeleteTask(ctx, 42)
-
 	if err != nil {
 		t.Fatalf("DeleteTask() error = %v, want nil", err)
 	}
-	if pool.execCalls != 1 || !strings.Contains(pool.gotExecSQL, "DELETE FROM todoapp.tasks") {
-		t.Fatalf("Exec() calls/sql = %d/%q, want one task DELETE", pool.execCalls, pool.gotExecSQL)
+	if pool.beginCalls != 1 {
+		t.Fatalf("pool Begin() calls = %d, want 1", pool.beginCalls)
 	}
-	if !reflect.DeepEqual(pool.gotExecArgs, []any{42}) {
-		t.Fatalf("Exec() args = %#v, want [42]", pool.gotExecArgs)
+	if pool.transaction.queryRowCalls != 1 ||
+		!strings.Contains(pool.transaction.gotRowSQL, "DELETE FROM todoapp.tasks") ||
+		!strings.Contains(pool.transaction.gotRowSQL, "RETURNING") {
+		t.Fatalf("transaction QueryRow() calls/sql = %d/%q, want DELETE ... RETURNING", pool.transaction.queryRowCalls, pool.transaction.gotRowSQL)
 	}
-	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
+	if !reflect.DeepEqual(pool.transaction.gotRowArgs, []any{42}) {
+		t.Fatalf("transaction QueryRow() args = %#v, want [42]", pool.transaction.gotRowArgs)
+	}
+	testutil.AssertRepositoryContext(t, pool.transaction.gotRowCtx, ctx)
+	assertOutboxEvent(t, pool, outboxRepository, core_events.EventTypeTaskDeleted, deletedTask, nil)
 }
 
-func TestDeleteTaskReturnsExecutionError(t *testing.T) {
+func TestDeleteTaskReturnsDeleteError(t *testing.T) {
 	executionError := errors.New("delete failed")
+	row := &repositoryTestRow{err: executionError}
 	pool := newRepositoryTestPool(t)
-	pool.execError = executionError
-	repository := NewTasksRepository(pool)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
 
 	err := repository.DeleteTask(context.Background(), 42)
 
-	if !errors.Is(err, executionError) || !strings.Contains(err.Error(), "exec query") {
-		t.Fatalf("DeleteTask() error = %v, want wrapped execution error", err)
+	if !errors.Is(err, executionError) || !strings.Contains(err.Error(), "delete task") {
+		t.Fatalf("DeleteTask() error = %v, want wrapped delete error", err)
 	}
-	if pool.execCalls != 1 {
-		t.Fatalf("Exec() calls = %d, want 1", pool.execCalls)
+	if pool.transaction.queryRowCalls != 1 {
+		t.Fatalf("transaction QueryRow() calls = %d, want 1", pool.transaction.queryRowCalls)
+	}
+	if outboxRepository.calls != 0 {
+		t.Fatalf("outbox Create() calls = %d, want 0", outboxRepository.calls)
+	}
+	if pool.transaction.commitCalls != 0 || pool.transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction commit/rollback calls = %d/%d, want 0/1", pool.transaction.commitCalls, pool.transaction.rollbackCalls)
 	}
 }
 
-func TestDeleteTaskReturnsNotFoundWhenNoRowsAffected(t *testing.T) {
+func TestDeleteTaskReturnsNotFoundWhenTaskDoesNotExist(t *testing.T) {
+	row := &repositoryTestRow{err: core_postgres_pool.ErrNoRows}
 	pool := newRepositoryTestPool(t)
-	pool.execResult = repositoryTestCommandTag{rowsAffected: 0}
-	repository := NewTasksRepository(pool)
+	pool.transaction.rowResult = row
+	repository, outboxRepository := newTasksRepositoryForTest(pool)
 
 	err := repository.DeleteTask(context.Background(), 42)
 
 	if !errors.Is(err, core_errors.ErrNotFound) {
 		t.Fatalf("DeleteTask() error = %v, want ErrNotFound", err)
 	}
-	if !strings.Contains(err.Error(), "id='42'") {
+	if !strings.Contains(err.Error(), "id=42") {
 		t.Fatalf("DeleteTask() error = %v, want requested ID in context", err)
 	}
+	if outboxRepository.calls != 0 {
+		t.Fatalf("outbox Create() calls = %d, want 0", outboxRepository.calls)
+	}
+	if pool.transaction.commitCalls != 0 || pool.transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction commit/rollback calls = %d/%d, want 0/1", pool.transaction.commitCalls, pool.transaction.rollbackCalls)
+	}
+}
+
+func TestDeleteTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
+	outboxError := errors.New("outbox insert failed")
+	createdAt := time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC)
+	row := &repositoryTestRow{
+		values: []any{42, 7, "Delete task", (*string)(nil), false, createdAt, (*time.Time)(nil), 23},
+	}
+	pool := newRepositoryTestPool(t)
+	pool.transaction.rowResult = row
+	repository, _ := newTasksRepositoryForTest(pool)
+	pool.transaction.execError = outboxError
+
+	err := repository.DeleteTask(context.Background(), 42)
+
+	if !errors.Is(err, outboxError) || !strings.Contains(err.Error(), "save task deletion event") {
+		t.Fatalf("DeleteTask() error = %v, want wrapped outbox error", err)
+	}
+	if pool.transaction.commitCalls != 0 || pool.transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction commit/rollback calls = %d/%d, want 0/1", pool.transaction.commitCalls, pool.transaction.rollbackCalls)
+	}
+}
+
+func assertOutboxEvent(
+	t *testing.T,
+	pool *repositoryTestPool,
+	outboxRepository *repositoryTestOutboxRepository,
+	wantEventType core_events.EventType,
+	task domain.Task,
+	before *domain.Task,
+) {
+	t.Helper()
+
+	if outboxRepository.calls != 1 {
+		t.Fatalf("outbox Create() calls = %d, want 1", outboxRepository.calls)
+	}
+
+	transaction, ok := outboxRepository.gotExecutor.(*repositoryTestTransaction)
+	if !ok || transaction != pool.transaction {
+		t.Fatal("outbox Create() did not receive the task transaction as its Executor")
+	}
+
+	if outboxRepository.gotEvent.EventType != wantEventType {
+		t.Errorf("outbox event type = %q, want %q", outboxRepository.gotEvent.EventType, wantEventType)
+	}
+	if outboxRepository.gotEvent.SchemaVersion != core_events.CurrentSchemaVersion {
+		t.Errorf(
+			"outbox schema version = %d, want %d",
+			outboxRepository.gotEvent.SchemaVersion,
+			core_events.CurrentSchemaVersion,
+		)
+	}
+	if outboxRepository.gotEvent.AggregateType != core_events.AggregateTypeTask {
+		t.Errorf(
+			"outbox aggregate type = %q, want %q",
+			outboxRepository.gotEvent.AggregateType,
+			core_events.AggregateTypeTask,
+		)
+	}
+	if outboxRepository.gotEvent.AggregateID != int64(task.ID) {
+		t.Errorf("outbox aggregate ID = %d, want %d", outboxRepository.gotEvent.AggregateID, task.ID)
+	}
+	if outboxRepository.gotEvent.AggregateVersion != int64(task.Version) {
+		t.Errorf("outbox aggregate version = %d, want %d", outboxRepository.gotEvent.AggregateVersion, task.Version)
+	}
+	if err := outboxRepository.gotEvent.Validate(); err != nil {
+		t.Errorf("outbox event Validate() error = %v, want nil", err)
+	}
+
+	if transaction.execCalls != 1 || !strings.Contains(transaction.gotExecSQL, "INSERT INTO todoapp.outbox") {
+		t.Fatalf("transaction Exec() calls/sql = %d/%q, want one outbox INSERT", transaction.execCalls, transaction.gotExecSQL)
+	}
+	if transaction.commitCalls != 1 {
+		t.Fatalf("transaction Commit() calls = %d, want 1", transaction.commitCalls)
+	}
+	if transaction.rollbackCalls != 1 {
+		t.Fatalf("transaction Rollback() calls = %d, want 1 deferred cleanup", transaction.rollbackCalls)
+	}
+	if len(transaction.callOrder) < 4 {
+		t.Fatalf("transaction call order = %#v, want task query, outbox insert, commit and rollback", transaction.callOrder)
+	}
+	if transaction.callOrder[len(transaction.callOrder)-3] != "exec" ||
+		transaction.callOrder[len(transaction.callOrder)-2] != "commit" ||
+		transaction.callOrder[len(transaction.callOrder)-1] != "rollback" {
+		t.Fatalf("transaction call order = %#v, want outbox INSERT before COMMIT", transaction.callOrder)
+	}
+
+	switch wantEventType {
+	case core_events.EventTypeTaskCreated:
+		var payload core_events.TaskCreatedPayload
+		if err := json.Unmarshal(outboxRepository.gotEvent.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal task.created payload: %v", err)
+		}
+		if !taskSnapshotsEqual(payload.Task, taskSnapshotForTest(task)) {
+			t.Errorf("task.created payload = %+v, want task snapshot %+v", payload.Task, taskSnapshotForTest(task))
+		}
+	case core_events.EventTypeTaskUpdated, core_events.EventTypeTaskCompleted:
+		if before == nil {
+			t.Fatal("before task is required when asserting task update event")
+		}
+		var payload core_events.TaskUpdatedPayload
+		if err := json.Unmarshal(outboxRepository.gotEvent.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal task update payload: %v", err)
+		}
+		if !taskSnapshotsEqual(payload.Before, taskSnapshotForTest(*before)) {
+			t.Errorf("task update before snapshot = %+v, want %+v", payload.Before, taskSnapshotForTest(*before))
+		}
+		if !taskSnapshotsEqual(payload.After, taskSnapshotForTest(task)) {
+			t.Errorf("task update after snapshot = %+v, want %+v", payload.After, taskSnapshotForTest(task))
+		}
+	case core_events.EventTypeTaskDeleted:
+		var payload core_events.TaskDeletedPayload
+		if err := json.Unmarshal(outboxRepository.gotEvent.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal task.deleted payload: %v", err)
+		}
+		if !taskSnapshotsEqual(payload.Task, taskSnapshotForTest(task)) {
+			t.Errorf("task.deleted payload = %+v, want task snapshot %+v", payload.Task, taskSnapshotForTest(task))
+		}
+	}
+}
+
+func taskSnapshotForTest(task domain.Task) core_events.TaskSnapshot {
+	return core_events.TaskSnapshot{
+		ID:           int64(task.ID),
+		Version:      int64(task.Version),
+		Title:        task.Title,
+		Description:  task.Description,
+		Completed:    task.Completed,
+		CreatedAt:    task.CreatedAt,
+		CompletedAt:  task.CompletedAt,
+		AuthorUserID: int64(task.AuthorUserID),
+	}
+}
+
+func taskSnapshotsEqual(left, right core_events.TaskSnapshot) bool {
+	if left.ID != right.ID ||
+		left.Version != right.Version ||
+		left.Title != right.Title ||
+		left.Completed != right.Completed ||
+		!left.CreatedAt.Equal(right.CreatedAt) ||
+		left.AuthorUserID != right.AuthorUserID {
+		return false
+	}
+
+	if left.Description == nil || right.Description == nil {
+		if left.Description != nil || right.Description != nil {
+			return false
+		}
+	} else if *left.Description != *right.Description {
+		return false
+	}
+
+	if left.CompletedAt == nil || right.CompletedAt == nil {
+		return left.CompletedAt == nil && right.CompletedAt == nil
+	}
+
+	return left.CompletedAt.Equal(*right.CompletedAt)
 }

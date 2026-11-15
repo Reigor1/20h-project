@@ -172,13 +172,17 @@ func (t *Task) ApplyPatch(path TaskPatch) error {
 	}
 
 	if path.Completed.Set {
-		tmp.Completed = *path.Completed.Value
+		newCompleted := *path.Completed.Value
 
-		if tmp.Completed {
-			completedAt := time.Now()
-			tmp.CompletedAt = &completedAt
-		} else {
-			tmp.CompletedAt = nil
+		if newCompleted != tmp.Completed {
+			tmp.Completed = newCompleted
+
+			if tmp.Completed {
+				completedAt := time.Now()
+				tmp.CompletedAt = &completedAt
+			} else {
+				tmp.CompletedAt = nil
+			}
 		}
 	}
 
