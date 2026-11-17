@@ -1,3 +1,4 @@
+
 CREATE TABLE todoapp.outbox (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
@@ -14,6 +15,11 @@ CREATE TABLE todoapp.outbox (
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     published_at TIMESTAMPTZ,
+
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    lease_token UUID,
+    lease_until TIMESTAMPTZ,
 
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
@@ -40,11 +46,17 @@ CREATE TABLE todoapp.outbox (
         CHECK (JSONB_TYPEOF(payload) = 'object'),
 
     CONSTRAINT outbox_attempts_non_negative
-        CHECK (attempts >= 0)
+        CHECK (attempts >= 0),
+
+    CONSTRAINT outbox_lease_fields_consistent
+        CHECK (
+            (lease_token IS NULL AND lease_until IS NULL) OR
+            (lease_token IS NOT NULL AND lease_until IS NOT NULL)
+        )
 );
 
-CREATE INDEX outbox_pending_idx
-    ON todoapp.outbox (created_at, id)
+CREATE INDEX outbox_ready_idx
+    ON todoapp.outbox (next_attempt_at, created_at, id)
     WHERE published_at IS NULL;
 
 CREATE INDEX outbox_aggregate_version_idx

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	core_config "github.com/Reigor1/20h-project/internal/core/config"
+	kafka_producer "github.com/Reigor1/20h-project/internal/core/kafka/producer"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 	core_observability_postgres "github.com/Reigor1/20h-project/internal/core/observability/postgres"
@@ -20,6 +21,7 @@ import (
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
 	outbox_postgres_repository "github.com/Reigor1/20h-project/internal/features/outbox/repository"
+	outbox_publisher "github.com/Reigor1/20h-project/internal/features/outbox/publisher"
 	statistics_redis_cache "github.com/Reigor1/20h-project/internal/features/statistics/cache/redis"
 	statistics_postgres_repository "github.com/Reigor1/20h-project/internal/features/statistics/repository/postgres"
 	statistics_service "github.com/Reigor1/20h-project/internal/features/statistics/service"
@@ -30,6 +32,7 @@ import (
 	users_postgres_repository "github.com/Reigor1/20h-project/internal/features/users/repository/postgres"
 	users_service "github.com/Reigor1/20h-project/internal/features/users/service"
 	users_transport_http "github.com/Reigor1/20h-project/internal/features/users/transport/http"
+
 	"go.uber.org/zap"
 
 	_ "github.com/Reigor1/20h-project/docs"
@@ -82,8 +85,8 @@ func run() (runErr error) {
 	observability, err := core_observability.New(
 		ctx,
 		core_observability.Config{
-			ServiceName:           "20h-project",
-			ServiceVersion:        os.Getenv("SERVICE_VERSION"),
+			ServiceName:            "20h-project",
+			ServiceVersion:         os.Getenv("SERVICE_VERSION"),
 			DeploymentEnvironment: os.Getenv("DEPLOYMENT_ENVIRONMENT"),
 		},
 	)
@@ -95,17 +98,43 @@ func run() (runErr error) {
 	// Shutdown it before closing the pool so the final metric collection
 	// can still read pgxpool.Stat().
 	var (
-		pool  *core_pgx_pool.Pool
-		cache core_redis.Cache
+		pool          *core_pgx_pool.Pool
+		cache         core_redis.Cache
+		kafkaProducer *kafka_producer.Producer
+		publisherDone chan error
 	)
 
 	defer func() {
 		// Stop application work before shutting down its dependencies.
 		cancel()
 
+		if publisherDone != nil {
+			if err := <-publisherDone; err != nil {
+				logger.Error(
+					"Outbox Publisher stopped with error",
+					zap.Error(err),
+				)
+			}
+		}
+
+		if kafkaProducer != nil {
+			if err := kafkaProducer.Close(10 * time.Second); err != nil {
+				logger.Warn(
+					"Kafka Producer shutdown failed",
+					zap.Error(err),
+				)
+
+				runErr = errors.Join(
+					runErr,
+					fmt.Errorf("close Kafka Producer: %w", err),
+				)
+			}
+		}
+
 		if cache != nil {
 			if err := cache.Close(); err != nil {
 				logger.Warn("Redis shutdown failed", zap.Error(err))
+
 				runErr = errors.Join(
 					runErr,
 					fmt.Errorf("close Redis cache: %w", err),
@@ -121,6 +150,7 @@ func run() (runErr error) {
 
 		if err := observability.Shutdown(shutdownCtx); err != nil {
 			logger.Error("OpenTelemetry shutdown failed", zap.Error(err))
+
 			runErr = errors.Join(
 				runErr,
 				fmt.Errorf("shutdown observability: %w", err),
@@ -200,7 +230,44 @@ func run() (runErr error) {
 
 	logger.Debug("initializing feature", zap.String("feature", "tasks"))
 
-	outboxRepository := outbox_postgres_repository.NewOutboxRepository()
+	kafkaConfig, err := kafka_producer.NewConfig()
+	if err != nil {
+		return fmt.Errorf("load Kafka Producer config: %w", err)
+	}
+
+	publisherConfig, err := outbox_publisher.NewConfig()
+	if err != nil {
+		return fmt.Errorf("load Outbox Publisher config: %w", err)
+	}
+
+	// Lease must outlive the maximum Kafka delivery timeout
+	// plus bounded PostgreSQL operations and a safety margin.
+	minimumLease := kafkaConfig.MessageTimeout +
+		pool.OpTimeout() +
+		15*time.Second
+
+	if publisherConfig.LeaseDuration <= minimumLease {
+		return fmt.Errorf(
+			"Outbox lease duration %s must exceed %s",
+			publisherConfig.LeaseDuration,
+			minimumLease,
+		)
+	}
+
+	kafkaProducer, err = kafka_producer.NewProducer(
+		kafkaConfig,
+		func(kafkaError error) {
+			logger.Warn(
+				"Kafka Producer event",
+				zap.Error(kafkaError),
+			)
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Kafka Producer: %w", err)
+	}
+
+	outboxRepository := outbox_postgres_repository.NewOutboxRepository(pool)
 
 	tasksRepository := tasks_postgres_repository.NewTasksRepository(
 		pool,
@@ -211,6 +278,22 @@ func run() (runErr error) {
 		observability.TracerProvider(),
 	)
 	tasksTransportHTTP := tasks_transport_http.NewTasksHTTPHandler(tasksService)
+
+	publisher, err := outbox_publisher.NewPublisher(
+		publisherConfig,
+		outboxRepository,
+		kafkaProducer,
+		logger.Logger,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Outbox Publisher: %w", err)
+	}
+
+	publisherDone = make(chan error, 1)
+
+	go func() {
+		publisherDone <- publisher.Run(ctx)
+	}()
 
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
 

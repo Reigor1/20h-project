@@ -216,6 +216,8 @@ todoapp-run:
 	$(MAKE) env-postgres-up && \
 	$(MAKE) env-port-forward && \
 	$(MAKE) observability-up && \
+	$(MAKE) kafka-up && \
+	$(MAKE) kafka-topics-setup && \
 	go mod tidy && \
 	go run ${PROJECT_ROOT}/cmd/todoapp/main.go
 
@@ -445,7 +447,13 @@ grafana-down:
 
 # Display the status of all Docker Compose services.
 ps:
-	@docker compose ps
+	@docker compose exec -T kafka-1 \
+    /opt/kafka/bin/kafka-console-consumer.sh \
+    --bootstrap-server kafka-1:19092 \
+    --topic task-events \
+    --from-beginning \
+    --property print.key=true \
+    --property key.separator=:
 
 # Remove all application log files.
 # Requires explicit user confirmation before deleting logs.

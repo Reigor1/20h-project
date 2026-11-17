@@ -38,7 +38,7 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 	assertConnectedTestDatabase(t, ctx, pool, config.Database)
 	testutil.PreparePostgresSchema(t, ctx, pool, "testdata/tasks_schema.sql")
 
-	outboxRepository := outbox_postgres_repository.NewOutboxRepository()
+	outboxRepository := outbox_postgres_repository.NewOutboxRepository(pool)
 	repository := tasks_postgres_repository.NewTasksRepository(pool, outboxRepository)
 
 	t.Run("CreateTask", func(t *testing.T) {
