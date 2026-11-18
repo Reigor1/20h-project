@@ -219,9 +219,15 @@ kafka-ui-down:
 # Application
 # =====================================================
 
-# Run the application locally.
-# Configure the log directory and PostgreSQL connection before starting.
-todoapp-run:
+ACTIVITY_WORKER_REPLICAS ?= 3
+
+# -----------------------------------------------------
+# Local
+# -----------------------------------------------------
+
+# Start infrastructure and Activity Workers in Docker,
+# then run the application locally.
+todoapp-run-locally:
 	@export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
 	export POSTGRES_HOST=localhost && \
 	$(MAKE) env-redis-up && \
@@ -232,7 +238,32 @@ todoapp-run:
 	$(MAKE) kafka-topics-setup && \
 	$(MAKE) kafka-ui-up && \
 	go mod tidy && \
+	$(MAKE) activity-workers-up && \
 	go run ${PROJECT_ROOT}/cmd/todoapp/main.go
+
+# -----------------------------------------------------
+# Docker
+# -----------------------------------------------------
+
+# Start infrastructure in Docker and run the application in Docker.
+todoapp-run-in-docker:
+	@export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
+	export POSTGRES_HOST=localhost && \
+	$(MAKE) env-redis-up && \
+	$(MAKE) env-postgres-up && \
+	$(MAKE) env-port-forward && \
+	$(MAKE) observability-up && \
+	$(MAKE) kafka-up && \
+	$(MAKE) kafka-topics-setup && \
+	$(MAKE) kafka-ui-up && \
+	$(MAKE) activity-workers-up && \
+	go mod tidy && \
+	$(MAKE) activity-workers-up && \
+	$(MAKE) todoapp-deploy
+
+# -----------------------------------------------------
+# Todoapp
+# -----------------------------------------------------
 
 # Build the application Docker image and start the container.
 todoapp-deploy:
@@ -241,6 +272,20 @@ todoapp-deploy:
 # Stop the application container without removing it.
 todoapp-undeploy:
 	@docker compose down todoapp
+
+# -----------------------------------------------------
+# Activity Worker
+# -----------------------------------------------------
+
+# Start three Activity Worker instances in one Consumer Group.
+activity-workers-up:
+	@docker compose up -d --build \
+		--scale activity-worker=$(ACTIVITY_WORKER_REPLICAS) \
+		activity-worker
+
+# Stop all Activity Worker instances.
+activity-workers-down:
+	@docker compose stop activity-worker
 
 
 # =====================================================

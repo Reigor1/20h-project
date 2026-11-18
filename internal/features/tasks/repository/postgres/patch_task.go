@@ -29,12 +29,17 @@ func (r *TasksRepository) PatchTask(
 		return before, nil
 	}
 
-	ctx, cancel, tx, err := r.beginTransaction(ctx)
+	txCtx, cancel, tx, err := core_postgres_pool.BeginTransaction(
+		ctx,
+		r.pool,
+		r.pool.OpTimeout(),
+	)
 	if err != nil {
-		return domain.Task{}, err
+		return domain.Task{}, fmt.Errorf("begin task update transaction: %w", err)
 	}
+
 	defer cancel()
-	defer rollbackTransaction(tx)
+	defer core_postgres_pool.RollbackTransaction(txCtx, tx, r.pool.OpTimeout())
 
 	query := `
 	UPDATE todoapp.tasks
@@ -57,7 +62,7 @@ func (r *TasksRepository) PatchTask(
 	`
 
 	updatedTask, err := scanTask(tx.QueryRow(
-		ctx,
+		txCtx,
 		query,
 		after.Title,
 		after.Description,
@@ -86,11 +91,11 @@ func (r *TasksRepository) PatchTask(
 		return domain.Task{}, fmt.Errorf("create task update event: %w", err)
 	}
 
-	if err := r.outboxRepository.Create(ctx, tx, event); err != nil {
+	if err := r.outboxRepository.Create(txCtx, tx, event); err != nil {
 		return domain.Task{}, fmt.Errorf("save task update event: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(txCtx); err != nil {
 		return domain.Task{}, fmt.Errorf("commit task update: %w", err)
 	}
 

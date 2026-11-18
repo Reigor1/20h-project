@@ -14,12 +14,17 @@ func (r *TasksRepository) DeleteTask(
 	ctx context.Context,
 	id int,
 ) error {
-	ctx, cancel, tx, err := r.beginTransaction(ctx)
+	txCtx, cancel, tx, err := core_postgres_pool.BeginTransaction(
+		ctx,
+		r.pool,
+		r.pool.OpTimeout(),
+	)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin task deletion transaction: %w", err)
 	}
+
 	defer cancel()
-	defer rollbackTransaction(tx)
+	defer core_postgres_pool.RollbackTransaction(txCtx, tx, r.pool.OpTimeout())
 
 	query := `
 	DELETE FROM todoapp.tasks
@@ -35,7 +40,7 @@ func (r *TasksRepository) DeleteTask(
 		author_user_id;
 	`
 
-	deletedTask, err := scanTask(tx.QueryRow(ctx, query, id))
+	deletedTask, err := scanTask(tx.QueryRow(txCtx, query, id))
 	if err != nil {
 		if errors.Is(err, core_postgres_pool.ErrNoRows) {
 			return fmt.Errorf(
@@ -55,11 +60,11 @@ func (r *TasksRepository) DeleteTask(
 		return fmt.Errorf("create task deletion event: %w", err)
 	}
 
-	if err := r.outboxRepository.Create(ctx, tx, event); err != nil {
+	if err := r.outboxRepository.Create(txCtx, tx, event); err != nil {
 		return fmt.Errorf("save task deletion event: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(txCtx); err != nil {
 		return fmt.Errorf("commit task deletion: %w", err)
 	}
 
