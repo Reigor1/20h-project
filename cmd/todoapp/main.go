@@ -20,6 +20,9 @@ import (
 	core_redis_v9 "github.com/Reigor1/20h-project/internal/core/repository/redis/redis_v9"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
+	activity_postgres_repository "github.com/Reigor1/20h-project/internal/features/activity/repository/postgres"
+	activity_service "github.com/Reigor1/20h-project/internal/features/activity/service"
+	activity_transport_http "github.com/Reigor1/20h-project/internal/features/activity/transport/http"
 	outbox_publisher "github.com/Reigor1/20h-project/internal/features/outbox/publisher"
 	outbox_postgres_repository "github.com/Reigor1/20h-project/internal/features/outbox/repository"
 	statistics_redis_cache "github.com/Reigor1/20h-project/internal/features/statistics/cache/redis"
@@ -279,6 +282,18 @@ func run() (runErr error) {
 	)
 	tasksTransportHTTP := tasks_transport_http.NewTasksHTTPHandler(tasksService)
 
+	logger.Debug("initializing feature", zap.String("feature", "activity"))
+
+	activityRepository := activity_postgres_repository.NewActivityRepository(pool)
+
+	activityService := activity_service.NewActivityService(
+		activityRepository,
+	)
+
+	activityTransportHTTP := activity_transport_http.NewActivityHTTPHandler(
+		activityService,
+	)
+
 	publisher, err := outbox_publisher.NewPublisher(
 		publisherConfig,
 		outboxRepository,
@@ -344,6 +359,7 @@ func run() (runErr error) {
 
 	apiVersionRouter1.RegisterRouts(usersTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(tasksTransportHTTP.Routes()...)
+	apiVersionRouter1.RegisterRouts(activityTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(statisticsTransportHTTP.Routes()...)
 
 	// Example of usage apiVersionRouter2 with dummy middleware.

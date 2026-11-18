@@ -3,15 +3,35 @@ package activity_service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	core_events "github.com/Reigor1/20h-project/internal/core/events"
 )
+
+type Activity struct {
+	EventID          string
+	EventType        string
+	TaskID           int64
+	AggregateVersion int64
+	SchemaVersion    int
+	AuthorUserID     int64
+	OccurredAt       time.Time
+	RecordedAt       time.Time
+	Payload          []byte
+}
 
 type ActivityRepository interface {
 	Record(
 		ctx context.Context,
 		event core_events.Envelope,
 	) error
+
+	GetActivities(
+		ctx context.Context,
+		taskID int,
+		limit *int,
+		offset *int,
+	) ([]Activity, error)
 }
 
 type ActivityService struct {

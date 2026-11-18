@@ -321,6 +321,62 @@ const docTemplate = `{
                 }
             }
         },
+        "/tasks/{task_id}/activity": {
+            "get": {
+                "description": "Получение истории событий конкретной задачи из PostgreSQL с опциональной пагинацией\nСортировка выполняется по версии задачи в порядке возрастания.\nauthor_user_id обозначает владельца задачи, а не обязательно пользователя, выполнившего изменение.\nДля task.updated и task.completed поле payload содержит снимки before и after.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activity"
+                ],
+                "summary": "Получение истории событий задачи",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID задачи",
+                        "name": "task_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Размер страницы с историей",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение страницы с историей",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "История событий задачи",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_features_activity_transport_http.ActivityDTOResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reigor1_20h-project_internal_core_transport_http_response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Reigor1_20h-project_internal_core_transport_http_response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "Просмотр списка пользователей с опциональной пагинацией",
@@ -575,6 +631,46 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "short human-readable message"
+                }
+            }
+        },
+        "internal_features_activity_transport_http.ActivityDTOResponse": {
+            "type": "object",
+            "properties": {
+                "aggregate_version": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "author_user_id": {
+                    "type": "integer",
+                    "example": 456
+                },
+                "event_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "event_type": {
+                    "type": "string",
+                    "example": "task.completed"
+                },
+                "occurred_at": {
+                    "type": "string",
+                    "example": "2026-11-11T10:00:00Z"
+                },
+                "payload": {
+                    "type": "object"
+                },
+                "recorded_at": {
+                    "type": "string",
+                    "example": "2026-11-11T10:00:01Z"
+                },
+                "schema_version": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "task_id": {
+                    "type": "integer",
+                    "example": 123
                 }
             }
         },
