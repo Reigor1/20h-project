@@ -9,30 +9,47 @@ services:
       context: ${PROJECT_ROOT}
       dockerfile: ${PROJECT_ROOT}/cmd/todoapp/Dockerfile
     container_name: todoapp
+
     environment:
-      - HTTP_ADDR=:5050
-      - HTTP_SHUTDOWN_TIMEOUT=${HTTP_SHUTDOWN_TIMEOUT}
-      - POSTGRES_HOST=todoapp-postgres
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_TIMEOUT=${POSTGRES_TIMEOUT}
-      - LOGGER_LEVEL=${LOGGER_LEVEL}
-      - TIME_ZONE=${TIME_ZONE}
-      - SERVICE_VERSION=${SERVICE_VERSION:-dev}
-      - DEPLOYMENT_ENVIRONMENT=${DEPLOYMENT_ENVIRONMENT:-development}
-      - LOGGER_FOLDER=/app/out/logs
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
-      - KAFKA_BOOTSTRAP_SERVERS=kafka-1:19092,kafka-2:19092,kafka-3:19092
+      # Application
+      HTTP_ADDR: ":5050"
+      HTTP_SHUTDOWN_TIMEOUT: "${HTTP_SHUTDOWN_TIMEOUT}"
+      TIME_ZONE: "${TIME_ZONE}"
+      # PostgreSQL
+      POSTGRES_HOST: todoapp-postgres
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_TIMEOUT: "${POSTGRES_TIMEOUT}"
+      # Redis
+      REDIS_ADDR: redis:6379
+      REDIS_USERNAME: "${REDIS_USERNAME:-default}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_DB: "${REDIS_DB:-0}"
+      REDIS_TIMEOUT: "${REDIS_TIMEOUT:-5s}"
+      # Logging
+      LOGGER_LEVEL: "${LOGGER_LEVEL}"
+      LOGGER_FOLDER: /app/out/logs
+      # Deployment
+      SERVICE_VERSION: "${SERVICE_VERSION:-dev}"
+      DEPLOYMENT_ENVIRONMENT: "${DEPLOYMENT_ENVIRONMENT:-development}"
+      # OpenTelemetry
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+
     volumes:
       - ${PROJECT_ROOT}/out/logs:/app/out/logs
+
     ports:
       - "5050:5050"
+
     depends_on:
       todoapp-postgres:
         condition: service_healthy
       otel-collector:
         condition: service_started
+
     stop_grace_period: 1m
     restart: always
 
@@ -199,6 +216,24 @@ services:
       timeout: 10s
       retries: 12
       start_period: 40s
+
+    restart: unless-stopped
+
+  # ----------------------------
+  # Kafka UI
+  # ----------------------------
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0
+    container_name: todoapp-kafka-ui
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    environment:
+      # Kafka Cluster
+      KAFKA_CLUSTERS_0_NAME: 20h-project
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
 
     restart: unless-stopped
 

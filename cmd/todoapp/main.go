@@ -20,8 +20,8 @@ import (
 	core_redis_v9 "github.com/Reigor1/20h-project/internal/core/repository/redis/redis_v9"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
-	outbox_postgres_repository "github.com/Reigor1/20h-project/internal/features/outbox/repository"
 	outbox_publisher "github.com/Reigor1/20h-project/internal/features/outbox/publisher"
+	outbox_postgres_repository "github.com/Reigor1/20h-project/internal/features/outbox/repository"
 	statistics_redis_cache "github.com/Reigor1/20h-project/internal/features/statistics/cache/redis"
 	statistics_postgres_repository "github.com/Reigor1/20h-project/internal/features/statistics/repository/postgres"
 	statistics_service "github.com/Reigor1/20h-project/internal/features/statistics/service"
@@ -85,8 +85,8 @@ func run() (runErr error) {
 	observability, err := core_observability.New(
 		ctx,
 		core_observability.Config{
-			ServiceName:            "20h-project",
-			ServiceVersion:         os.Getenv("SERVICE_VERSION"),
+			ServiceName:           "20h-project",
+			ServiceVersion:        os.Getenv("SERVICE_VERSION"),
 			DeploymentEnvironment: os.Getenv("DEPLOYMENT_ENVIRONMENT"),
 		},
 	)
@@ -365,6 +365,11 @@ func run() (runErr error) {
 		zap.String("prometheus_url", "http://localhost:9090/graph"),
 		zap.String("grafana_url", "http://localhost:3000"),
 		zap.String("swagger_url", "http://127.0.0.1:5050/swagger/index.html"),
+	)
+
+	logger.Info(
+		"Kafka management UI",
+		zap.String("url", "http://127.0.0.1:8080"),
 	)
 
 	if err := httpServer.Run(ctx); err != nil {

@@ -202,6 +202,18 @@ kafka-topics-config:
 		--entity-name task-events.dlq \
 		--describe
 
+# -----------------------------------------------------
+# Kafka UI
+# -----------------------------------------------------
+
+# Start the Kafka UI container.
+kafka-ui-up:
+	@docker compose up -d kafka-ui
+
+# Stop the Kafka UI container.
+kafka-ui-down:
+	@docker compose down
+
 
 # =====================================================
 # Application
@@ -218,6 +230,7 @@ todoapp-run:
 	$(MAKE) observability-up && \
 	$(MAKE) kafka-up && \
 	$(MAKE) kafka-topics-setup && \
+	$(MAKE) kafka-ui-up && \
 	go mod tidy && \
 	go run ${PROJECT_ROOT}/cmd/todoapp/main.go
 
@@ -447,13 +460,7 @@ grafana-down:
 
 # Display the status of all Docker Compose services.
 ps:
-	@docker compose exec -T kafka-1 \
-    /opt/kafka/bin/kafka-console-consumer.sh \
-    --bootstrap-server kafka-1:19092 \
-    --topic task-events \
-    --from-beginning \
-    --property print.key=true \
-    --property key.separator=:
+	@ps
 
 # Remove all application log files.
 # Requires explicit user confirmation before deleting logs.
