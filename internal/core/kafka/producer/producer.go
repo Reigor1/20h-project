@@ -10,8 +10,9 @@ import (
 )
 
 type Message struct {
-	Key   []byte
-	Value []byte
+	Key       []byte
+	Value     []byte
+	Partition *int32
 }
 
 type Producer struct {
@@ -109,11 +110,25 @@ func (p *Producer) PublishBatch(
 	pending := make(map[int]struct{}, len(messages))
 
 	for index, message := range messages {
+		partition := kafka.PartitionAny
+
+		if message.Partition != nil {
+			if *message.Partition < 0 {
+				results[index] = fmt.Errorf(
+					"Kafka partition must not be negative: %d",
+					*message.Partition,
+				)
+				continue
+			}
+
+			partition = *message.Partition
+		}
+
 		err := p.client.Produce(
 			&kafka.Message{
 				TopicPartition: kafka.TopicPartition{
 					Topic:     &topic,
-					Partition: kafka.PartitionAny,
+					Partition: partition,
 				},
 				Key:    message.Key,
 				Value:  message.Value,
@@ -171,6 +186,31 @@ func (p *Producer) PublishBatch(
 	}
 
 	return results
+}
+
+func (p *Producer) Publish(
+	ctx context.Context,
+	topic string,
+	message Message,
+) error {
+	results := p.PublishBatch(
+		ctx,
+		topic,
+		[]Message{message},
+	)
+
+	if len(results) != 1 {
+		return fmt.Errorf(
+			"unexpected Kafka publish result count: got %d, want 1",
+			len(results),
+		)
+	}
+
+	if results[0] != nil {
+		return fmt.Errorf("publish Kafka message: %w", results[0])
+	}
+
+	return nil
 }
 
 func (p *Producer) Close(timeout time.Duration) error {

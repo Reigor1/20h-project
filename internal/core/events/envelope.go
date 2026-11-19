@@ -26,7 +26,9 @@ const (
 
 var (
 	ErrInvalidEnvelope          = errors.New("invalid event envelope")
-	ErrUnsupportedSchemaVersion = errors.New("unsupported event schema version")
+	ErrMalformedJSON            = errors.New("malformed event JSON")
+	ErrUnsupportedEventType     = errors.New("unsupported event type")
+	ErrUnsupportedSchemaVersion = errors.New("unsupported schema version")
 )
 
 type Envelope struct {
@@ -55,9 +57,16 @@ func (e Envelope) Validate() error {
 		EventTypeTaskCompleted,
 		EventTypeTaskDeleted:
 	default:
+		if e.EventType == "" {
+			return fmt.Errorf(
+				"%w: event_type is required",
+				ErrInvalidEnvelope,
+			)
+		}
+
 		return fmt.Errorf(
-			"%w: unsupported event_type %q",
-			ErrInvalidEnvelope,
+			"%w: %q",
+			ErrUnsupportedEventType,
 			e.EventType,
 		)
 	}
@@ -143,11 +152,18 @@ func Unmarshal(data []byte) (Envelope, error) {
 	var envelope Envelope
 
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return Envelope{}, fmt.Errorf("unmarshal event envelope: %w", err)
+		return Envelope{}, fmt.Errorf(
+			"%w: %w",
+			ErrMalformedJSON,
+			err,
+		)
 	}
 
 	if err := envelope.Validate(); err != nil {
-		return Envelope{}, fmt.Errorf("validate event envelope: %w", err)
+		return Envelope{}, fmt.Errorf(
+			"validate event envelope: %w",
+			err,
+		)
 	}
 
 	return envelope, nil

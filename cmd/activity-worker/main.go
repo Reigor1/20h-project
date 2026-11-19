@@ -11,6 +11,7 @@ import (
 
 	core_config "github.com/Reigor1/20h-project/internal/core/config"
 	kafka_consumer "github.com/Reigor1/20h-project/internal/core/kafka/consumer"
+	kafka_producer "github.com/Reigor1/20h-project/internal/core/kafka/producer"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
 	activity_consumer "github.com/Reigor1/20h-project/internal/features/activity/consumer"
@@ -80,6 +81,35 @@ func run() (runErr error) {
 		}
 	}()
 
+	producerConfig, err := kafka_producer.NewConfig()
+	if err != nil {
+		return fmt.Errorf("load Kafka Producer config: %w", err)
+	}
+
+	producerConfig.ClientID = kafkaConfig.ClientID + "-dlq"
+
+	kafkaProducer, err := kafka_producer.NewProducer(
+		producerConfig,
+		func(err error) {
+			logger.Warn(
+				"Kafka DLQ Producer reported an error",
+				zap.Error(err),
+			)
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Kafka DLQ Producer: %w", err)
+	}
+
+	defer func() {
+		if err := kafkaProducer.Close(30 * time.Second); err != nil {
+			runErr = errors.Join(
+				runErr,
+				fmt.Errorf("close Kafka DLQ Producer: %w", err),
+			)
+		}
+	}()
+
 	activityRepository := activity_postgres_repository.NewActivityRepository(
 		pool,
 	)
@@ -90,7 +120,11 @@ func run() (runErr error) {
 
 	worker, err := activity_consumer.NewWorker(
 		kafkaConfig.Topic,
+		kafkaConfig.DLQTopic,
+		kafkaConfig.RetryBaseDelay,
+		kafkaConfig.RetryMaxDelay,
 		kafkaClient,
+		kafkaProducer,
 		activityService,
 		logger.Logger,
 	)
@@ -102,6 +136,7 @@ func run() (runErr error) {
 		"Activity Worker initialized",
 		zap.String("group_id", kafkaConfig.GroupID),
 		zap.String("topic", kafkaConfig.Topic),
+		zap.String("dlq_topic", kafkaConfig.DLQTopic),
 	)
 
 	return worker.Run(ctx)

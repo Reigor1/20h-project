@@ -105,7 +105,7 @@ func TestEnvelopeValidate(t *testing.T) {
 			modify: func(e *Envelope) {
 				e.EventType = "task.unknown"
 			},
-			wantErr: ErrInvalidEnvelope,
+			wantErr: ErrUnsupportedEventType,
 		},
 		{
 			name: "missing schema version",
@@ -242,8 +242,11 @@ func TestUnmarshalRejectsUnsupportedSchemaVersion(t *testing.T) {
 func TestUnmarshalRejectsMalformedJSON(t *testing.T) {
 	_, err := Unmarshal([]byte(`{"event_id":`))
 
-	if err == nil {
-		t.Fatal("Unmarshal() error = nil, want JSON decoding error")
+	if !errors.Is(err, ErrMalformedJSON) {
+		t.Fatalf(
+			"Unmarshal() error = %v, want ErrMalformedJSON",
+			err,
+		)
 	}
 }
 

@@ -3,6 +3,7 @@ package kafka_consumer
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kelseyhightower/envconfig"
 )
@@ -13,7 +14,11 @@ type Config struct {
 	GroupID         string `envconfig:"CONSUMER_GROUP_ID" default:"activity-workers"`
 	ClientID        string `envconfig:"CONSUMER_CLIENT_ID" default:"20h-project-activity-worker"`
 	Topic           string `envconfig:"CONSUMER_TOPIC" default:"task-events"`
+	DLQTopic        string `envconfig:"CONSUMER_DLQ_TOPIC" default:"task-events.dlq"`
 	AutoOffsetReset string `envconfig:"CONSUMER_AUTO_OFFSET_RESET" default:"earliest"`
+
+	RetryBaseDelay time.Duration `envconfig:"CONSUMER_RETRY_BASE_DELAY" default:"1s"`
+	RetryMaxDelay  time.Duration `envconfig:"CONSUMER_RETRY_MAX_DELAY" default:"30s"`
 }
 
 func NewConfig() (Config, error) {
@@ -47,12 +52,30 @@ func (c Config) Validate() error {
 		return fmt.Errorf("Kafka Consumer topic must not be empty")
 	}
 
+	if strings.TrimSpace(c.DLQTopic) == "" {
+		return fmt.Errorf("Kafka Consumer DLQ topic must not be empty")
+	}
+
+	if c.Topic == c.DLQTopic {
+		return fmt.Errorf("Kafka Consumer topic and DLQ topic must differ")
+	}
+
 	switch c.AutoOffsetReset {
 	case "earliest", "latest", "error":
 	default:
 		return fmt.Errorf(
 			"unsupported Kafka auto offset reset value %q",
 			c.AutoOffsetReset,
+		)
+	}
+
+	if c.RetryBaseDelay <= 0 {
+		return fmt.Errorf("Kafka Consumer retry base delay must be positive")
+	}
+
+	if c.RetryMaxDelay < c.RetryBaseDelay {
+		return fmt.Errorf(
+			"Kafka Consumer retry max delay must not be less than base delay",
 		)
 	}
 
