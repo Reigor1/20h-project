@@ -284,6 +284,14 @@ func run() (runErr error) {
 
 	outboxRepository := outbox_postgres_repository.NewOutboxRepository(pool)
 
+	kafkaMetrics, err := core_observability.NewKafkaMetrics(
+		observability.MeterProvider(),
+		outboxRepository,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Kafka observability: %w", err)
+	}
+
 	tasksRepository := tasks_postgres_repository.NewTasksRepository(
 		pool,
 		outboxRepository,
@@ -311,6 +319,12 @@ func run() (runErr error) {
 		outboxRepository,
 		kafkaProducer,
 		logger.Logger,
+		outbox_publisher.Instrumentation{
+			Metrics: kafkaMetrics,
+			Tracer: observability.TracerProvider().Tracer(
+				"github.com/Reigor1/20h-project/internal/features/outbox/publisher",
+			),
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Outbox Publisher: %w", err)

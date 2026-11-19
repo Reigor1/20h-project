@@ -115,8 +115,9 @@ func (p *fakeProducer) Publish(
 }
 
 type fakeActivityService struct {
-	sequence *[]string
-	errors   []error
+	sequence  *[]string
+	errors    []error
+	duplicate bool
 	calls              int
 	onRecord           func()
 	waitForContextDone bool
@@ -125,7 +126,7 @@ type fakeActivityService struct {
 func (s *fakeActivityService) Record(
 	ctx context.Context,
 	_ core_events.Envelope,
-) error {
+) (bool, error) {
 	s.calls++
 
 	if s.sequence != nil {
@@ -138,17 +139,17 @@ func (s *fakeActivityService) Record(
 
 	if s.waitForContextDone {
 		<-ctx.Done()
-		return ctx.Err()
+		return false, ctx.Err()
 	}
 
 	if len(s.errors) == 0 {
-		return nil
+		return !s.duplicate, nil
 	}
 
 	err := s.errors[0]
 	s.errors = s.errors[1:]
 
-	return err
+	return false, err
 }
 
 func newTestWorker(
@@ -829,5 +830,24 @@ func TestRunLeavesMessageUncommittedWhenShutdownGraceExpires(t *testing.T) {
 	}
 	if consumer.committed != 0 {
 		t.Errorf("committed messages = %d, want 0", consumer.committed)
+	}
+}
+
+func TestProcessMessageRecognizesDuplicateDelivery(t *testing.T) {
+	consumer := &fakeConsumer{}
+	service := &fakeActivityService{duplicate: true}
+	worker := newTestWorker(t, consumer, &fakeProducer{}, service)
+
+	var pending []*kafka_consumer.Message
+	if err := worker.processMessage(
+		context.Background(),
+		newTestEventMessage(t),
+		&pending,
+	); err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+
+	if consumer.committed != 1 {
+		t.Errorf("committed messages = %d, want 1", consumer.committed)
 	}
 }

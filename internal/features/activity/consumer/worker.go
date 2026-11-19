@@ -12,6 +12,12 @@ import (
 	kafka_consumer "github.com/Reigor1/20h-project/internal/core/kafka/consumer"
 	kafka_producer "github.com/Reigor1/20h-project/internal/core/kafka/producer"
 	activity_dlq "github.com/Reigor1/20h-project/internal/features/activity/dlq"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -37,7 +43,12 @@ type KafkaProducer interface {
 }
 
 type ActivityService interface {
-	Record(ctx context.Context, event core_events.Envelope) error
+	Record(ctx context.Context, event core_events.Envelope) (inserted bool, err error)
+}
+
+type Instrumentation struct {
+	Metrics *core_observability.KafkaMetrics
+	Tracer  trace.Tracer
 }
 
 type Worker struct {
@@ -52,6 +63,8 @@ type Worker struct {
 	producer KafkaProducer
 	service  ActivityService
 	logger   *zap.Logger
+	metrics  *core_observability.KafkaMetrics
+	tracer   trace.Tracer
 }
 
 func NewWorker(
@@ -65,6 +78,7 @@ func NewWorker(
 	producer KafkaProducer,
 	service ActivityService,
 	logger *zap.Logger,
+	instrumentation ...Instrumentation,
 ) (*Worker, error) {
 	switch {
 	case strings.TrimSpace(topic) == "":
@@ -91,7 +105,7 @@ func NewWorker(
 		return nil, fmt.Errorf("Worker logger must not be nil")
 	}
 
-	return &Worker{
+	worker := &Worker{
 		topic:              topic,
 		dlqTopic:           dlqTopic,
 		retryBaseDelay:     retryBaseDelay,
@@ -102,7 +116,13 @@ func NewWorker(
 		producer:           producer,
 		service:            service,
 		logger:             logger,
-	}, nil
+	}
+	if len(instrumentation) > 0 {
+		worker.metrics = instrumentation[0].Metrics
+		worker.tracer = instrumentation[0].Tracer
+	}
+
+	return worker, nil
 }
 
 func (w *Worker) Run(ctx context.Context) error {
@@ -198,9 +218,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				w.logger.Warn(
 					"Activity Worker shutdown interrupted the current message; it will be redelivered",
-					zap.String("topic", message.Topic),
-					zap.Int32("partition", message.Partition),
-					zap.Int64("offset", message.Offset),
+					w.messageLogFields(message)...,
 					zap.Error(err),
 				)
 				return nil
@@ -241,26 +259,94 @@ func (w *Worker) processMessageWithStop(
 	stopCtx context.Context,
 	message *kafka_consumer.Message,
 	pending *[]*kafka_consumer.Message,
-) error {
+) (returnErr error) {
 	if !w.consumer.IsAssigned(message) {
 		return kafka_consumer.ErrAssignmentLost
 	}
+
+	startedAt := time.Now()
+	metadata := readEventMetadata(message.Value)
+	ctx = propagation.TraceContext{}.Extract(
+		ctx,
+		traceCarrierFromMessage(message.Headers),
+	)
+
+	var span trace.Span
+	if w.tracer != nil {
+		ctx, span = w.tracer.Start(
+			ctx,
+			"kafka.process",
+			trace.WithSpanKind(trace.SpanKindConsumer),
+			trace.WithAttributes(
+				attribute.String("messaging.system", "kafka"),
+				attribute.String("messaging.destination.name", message.Topic),
+				attribute.Int("messaging.destination.partition.id", int(message.Partition)),
+				attribute.Int64("messaging.kafka.offset", message.Offset),
+				attribute.String("event.id", metadata.EventID),
+				attribute.String("event.type", metadata.EventType),
+				attribute.Int64("task.id", metadata.TaskID),
+			),
+		)
+	}
+
+	outcome := "failed"
+	defer func() {
+		if w.metrics != nil {
+			w.metrics.RecordActivityProcessingDuration(
+				ctx,
+				time.Since(startedAt),
+				metadata.EventType,
+				outcome,
+			)
+		}
+		if span != nil {
+			if returnErr != nil {
+				span.RecordError(returnErr)
+				span.SetStatus(codes.Error, returnErr.Error())
+			} else {
+				span.SetAttributes(attribute.String("activity.processing.outcome", outcome))
+			}
+			span.End()
+		}
+	}()
 
 	event, err := core_events.Unmarshal(message.Value)
 	if err != nil {
 		if !isPermanentMessageError(err) {
 			return fmt.Errorf("classify event message: %w", err)
 		}
-
-		return w.moveToDLQ(ctx, stopCtx, message, err, pending)
+		if err := w.moveToDLQ(ctx, stopCtx, message, err, pending); err != nil {
+			return err
+		}
+		outcome = "dlq"
+		return nil
 	}
 
+	metadata = eventMetadata{
+		EventID:   event.EventID,
+		EventType: string(event.EventType),
+		TaskID:    event.AggregateID,
+	}
+	if span != nil {
+		span.SetAttributes(
+			attribute.String("event.id", event.EventID),
+			attribute.String("event.type", string(event.EventType)),
+			attribute.Int64("task.id", event.AggregateID),
+		)
+	}
+
+	var inserted bool
 	attempts, paused, err := w.retry(
 		ctx,
 		stopCtx,
 		message,
 		func() error {
-			return w.service.Record(ctx, event)
+			var recordErr error
+			inserted, recordErr = w.service.Record(ctx, event)
+			if recordErr != nil && w.metrics != nil {
+				w.metrics.RecordActivityFailed(ctx, string(event.EventType))
+			}
+			return recordErr
 		},
 		pending,
 		"record Activity event",
@@ -286,6 +372,20 @@ func (w *Worker) processMessageWithStop(
 		}
 	}
 
+	if w.metrics != nil {
+		w.metrics.RecordActivityProcessed(ctx, string(event.EventType))
+		if !inserted {
+			w.metrics.RecordActivityDuplicate(ctx, string(event.EventType))
+		}
+	}
+	if span != nil {
+		span.SetAttributes(
+			attribute.Bool("messaging.message.duplicate", !inserted),
+			attribute.Int("activity.processing.attempt_count", attempts),
+		)
+	}
+	outcome = "processed"
+
 	w.logger.Info(
 		"Activity event processed",
 		zap.String("event_id", event.EventID),
@@ -296,6 +396,7 @@ func (w *Worker) processMessageWithStop(
 		zap.String("topic", message.Topic),
 		zap.Int32("partition", message.Partition),
 		zap.Int64("offset", message.Offset),
+		zap.Bool("duplicate", !inserted),
 	)
 
 	return nil
@@ -334,8 +435,9 @@ func (w *Worker) moveToDLQ(
 				ctx,
 				w.dlqTopic,
 				kafka_producer.Message{
-					Key:   []byte(record.EventID),
-					Value: payload,
+					Key:     []byte(record.EventID),
+					Value:   payload,
+					Headers: traceHeadersFromContext(ctx),
 				},
 			)
 		},
@@ -344,6 +446,12 @@ func (w *Worker) moveToDLQ(
 	)
 	if err != nil {
 		return w.resumeAfterAssignmentLoss(paused, err)
+	}
+
+	metadata := readEventMetadata(message.Value)
+	if w.metrics != nil {
+		w.metrics.RecordActivityFailed(ctx, metadata.EventType)
+		w.metrics.RecordActivityDLQMessage(ctx, metadata.EventType)
 	}
 
 	// Commit the source offset only after the DLQ Delivery Report succeeds.
@@ -367,6 +475,8 @@ func (w *Worker) moveToDLQ(
 	w.logger.Error(
 		"Activity event moved to DLQ",
 		zap.String("event_id", record.EventID),
+		zap.Int64("task_id", metadata.TaskID),
+		zap.String("event_type", metadata.EventType),
 		zap.String("source_topic", record.SourceTopic),
 		zap.Int32("source_partition", record.SourcePartition),
 		zap.Int64("source_offset", record.SourceOffset),
@@ -398,6 +508,7 @@ func (w *Worker) retry(
 			"Activity Worker operation failed; retrying",
 			zap.String("operation", operationName),
 			zap.Int("attempt", attempt),
+			w.messageLogFields(message)...,
 			zap.Error(err),
 		)
 	}
@@ -595,6 +706,7 @@ func (w *Worker) commitWithRetry(
 			zap.Int64("offset", message.Offset),
 			zap.Int("attempt", attempt),
 			zap.Duration("retry_delay", delay),
+			w.messageLogFields(message)...,
 			zap.Error(err),
 		)
 
@@ -672,4 +784,67 @@ func extractEventID(payload []byte) string {
 	}
 
 	return event.EventID
+}
+
+type eventMetadata struct {
+	EventID   string
+	EventType string
+	TaskID    int64
+}
+
+func readEventMetadata(payload []byte) eventMetadata {
+	var metadata eventMetadata
+	var envelope struct {
+		EventID     string `json:"event_id"`
+		EventType   string `json:"event_type"`
+		AggregateID int64  `json:"aggregate_id"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return metadata
+	}
+	metadata.EventID = envelope.EventID
+	metadata.EventType = envelope.EventType
+	metadata.TaskID = envelope.AggregateID
+	return metadata
+}
+
+func traceCarrierFromMessage(headers []kafka.Header) propagation.MapCarrier {
+	carrier := propagation.MapCarrier{}
+	for _, header := range headers {
+		if header.Key == "traceparent" || header.Key == "tracestate" {
+			carrier.Set(header.Key, string(header.Value))
+		}
+	}
+	return carrier
+}
+
+func traceHeadersFromContext(ctx context.Context) []kafka.Header {
+	carrier := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, carrier)
+	headers := make([]kafka.Header, 0, 2)
+	for _, key := range []string{"traceparent", "tracestate"} {
+		if value := carrier.Get(key); value != "" {
+			headers = append(headers, kafka.Header{Key: key, Value: []byte(value)})
+		}
+	}
+	return headers
+}
+
+func (w *Worker) messageLogFields(message *kafka_consumer.Message) []zap.Field {
+	metadata := readEventMetadata(message.Value)
+	fields := []zap.Field{
+		zap.String("topic", message.Topic),
+		zap.Int32("partition", message.Partition),
+		zap.Int64("offset", message.Offset),
+	}
+	if metadata.EventID != "" {
+		fields = append(fields, zap.String("event_id", metadata.EventID))
+	}
+	if metadata.EventType != "" {
+		fields = append(fields, zap.String("event_type", metadata.EventType))
+	}
+	if metadata.TaskID > 0 {
+		fields = append(fields, zap.Int64("task_id", metadata.TaskID))
+	}
+	return fields
 }

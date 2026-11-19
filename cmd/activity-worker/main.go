@@ -163,6 +163,14 @@ func run() (runErr error) {
 		activityRepository,
 	)
 
+	kafkaMetrics, err := core_observability.NewKafkaMetrics(
+		observability.MeterProvider(),
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Kafka Activity metrics: %w", err)
+	}
+
 	worker, err := activity_consumer.NewWorker(
 		kafkaConfig.Topic,
 		kafkaConfig.DLQTopic,
@@ -174,6 +182,12 @@ func run() (runErr error) {
 		kafkaProducer,
 		activityService,
 		logger.Logger,
+		activity_consumer.Instrumentation{
+			Metrics: kafkaMetrics,
+			Tracer: observability.TracerProvider().Tracer(
+				"github.com/Reigor1/20h-project/internal/features/activity/consumer",
+			),
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Activity Worker: %w", err)

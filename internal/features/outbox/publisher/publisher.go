@@ -9,7 +9,13 @@ import (
 
 	core_events "github.com/Reigor1/20h-project/internal/core/events"
 	kafka_producer "github.com/Reigor1/20h-project/internal/core/kafka/producer"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 	outbox_repository "github.com/Reigor1/20h-project/internal/features/outbox/repository"
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -45,11 +51,18 @@ type EventProducer interface {
 	) []error
 }
 
+type Instrumentation struct {
+	Metrics *core_observability.KafkaMetrics
+	Tracer  trace.Tracer
+}
+
 type Publisher struct {
 	config     Config
 	repository OutboxRepository
 	producer   EventProducer
 	logger     *zap.Logger
+	metrics    *core_observability.KafkaMetrics
+	tracer     trace.Tracer
 }
 
 func NewPublisher(
@@ -57,6 +70,7 @@ func NewPublisher(
 	repository OutboxRepository,
 	producer EventProducer,
 	logger *zap.Logger,
+	instrumentation ...Instrumentation,
 ) (*Publisher, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -74,12 +88,18 @@ func NewPublisher(
 		return nil, fmt.Errorf("Publisher logger must not be nil")
 	}
 
-	return &Publisher{
+	publisher := &Publisher{
 		config:     config,
 		repository: repository,
 		producer:   producer,
 		logger:     logger,
-	}, nil
+	}
+	if len(instrumentation) > 0 {
+		publisher.metrics = instrumentation[0].Metrics
+		publisher.tracer = instrumentation[0].Tracer
+	}
+
+	return publisher, nil
 }
 
 func (p *Publisher) Run(ctx context.Context) error {
@@ -167,9 +187,43 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 	producerMessages := make([]kafka_producer.Message, 0, len(events))
 	eventIndexes := make([]int, 0, len(events))
 	deliveryErrors := make([]error, len(events))
+	eventSpans := make([]trace.Span, len(events))
+
+	defer func() {
+		for _, span := range eventSpans {
+			if span != nil {
+				span.End()
+			}
+		}
+	}()
 
 	for index, event := range events {
-		// The Event field already contains the complete Envelope.
+		eventCtx := propagation.TraceContext{}.Extract(
+			ctx,
+			propagation.MapCarrier{
+				"traceparent": event.TraceParent,
+				"tracestate":  event.TraceState,
+			},
+		)
+
+		spanAttributes := []attribute.KeyValue{
+			attribute.String("messaging.system", "kafka"),
+			attribute.String("messaging.destination.name", p.config.Topic),
+			attribute.String("messaging.operation.type", "publish"),
+			attribute.String("event.id", event.Event.EventID),
+			attribute.String("event.type", string(event.Event.EventType)),
+			attribute.Int64("task.id", event.Event.AggregateID),
+		}
+
+		if p.tracer != nil {
+			eventCtx, eventSpans[index] = p.tracer.Start(
+				eventCtx,
+				"kafka.publish",
+				trace.WithSpanKind(trace.SpanKindProducer),
+				trace.WithAttributes(spanAttributes...),
+			)
+		}
+
 		value, err := core_events.Marshal(event.Event)
 		if err != nil {
 			deliveryErrors[index] = fmt.Errorf(
@@ -177,20 +231,33 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 				event.Event.EventID,
 				err,
 			)
+			recordPublishSpanError(eventSpans[index], deliveryErrors[index])
 			continue
+		}
+
+		carrier := propagation.MapCarrier{}
+		propagation.TraceContext{}.Inject(eventCtx, carrier)
+
+		headers := make([]kafka.Header, 0, 2)
+		for _, key := range []string{"traceparent", "tracestate"} {
+			if value := carrier.Get(key); value != "" {
+				headers = append(headers, kafka.Header{
+					Key:   key,
+					Value: []byte(value),
+				})
+			}
 		}
 
 		producerMessages = append(
 			producerMessages,
 			kafka_producer.Message{
-				// All events for one Task use the same Kafka key.
 				Key: []byte(
 					strconv.FormatInt(event.Event.AggregateID, 10),
 				),
-				Value: value,
+				Value:   value,
+				Headers: headers,
 			},
 		)
-
 		eventIndexes = append(eventIndexes, index)
 	}
 
@@ -202,74 +269,79 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 		)
 
 		if len(results) != len(eventIndexes) {
-			return len(events), fmt.Errorf(
+			batchErr := fmt.Errorf(
 				"Kafka Producer returned %d results for %d messages",
 				len(results),
 				len(eventIndexes),
 			)
-		}
-
-		for index, eventIndex := range eventIndexes {
-			deliveryErrors[eventIndex] = results[index]
+			for _, eventIndex := range eventIndexes {
+				deliveryErrors[eventIndex] = batchErr
+			}
+		} else {
+			for index, eventIndex := range eventIndexes {
+				deliveryErrors[eventIndex] = results[index]
+			}
 		}
 	}
 
 	for index, event := range events {
-		// If the batch grace period expired, leave remaining rows leased.
-		// Lease expiry makes them eligible for at-least-once redelivery and
-		// avoids extending shutdown with a sequence of repository updates.
 		if ctx.Err() != nil {
+			recordPublishSpanError(eventSpans[index], ctx.Err())
 			continue
 		}
 
 		deliveryErr := deliveryErrors[index]
-
 		if deliveryErr == nil {
-			// Delivery Report confirms successful broker acknowledgement.
-			// Preserve context values but detach from cancellation.
-			// The update itself is still bounded by a timeout.
+			// Kafka acknowledged the event, even if the Outbox state update
+			// later fails and the lease causes at-least-once redelivery.
+			if p.metrics != nil {
+				p.metrics.RecordOutboxPublished(ctx, string(event.Event.EventType))
+			}
+			if span := eventSpans[index]; span != nil {
+				span.AddEvent("kafka.delivery_report_received")
+				span.SetAttributes(attribute.String("outbox.publish.outcome", "published"))
+			}
+
 			markCtx, cancel := context.WithTimeout(
 				context.WithoutCancel(ctx),
 				repositoryUpdateTimeout,
 			)
-
-			err := p.repository.MarkPublished(
-				markCtx,
-				event.ID,
-				event.LeaseToken,
-			)
-
+			err := p.repository.MarkPublished(markCtx, event.ID, event.LeaseToken)
 			cancel()
 
 			if err != nil {
-				// Kafka may already contain the message.
-				// Lease expiration allows at-least-once redelivery.
+				recordPublishSpanError(eventSpans[index], err)
 				p.logger.Error(
 					"Kafka acknowledged event but Outbox update failed",
 					zap.String("event_id", event.Event.EventID),
+					zap.Int64("task_id", event.Event.AggregateID),
+					zap.String("event_type", string(event.Event.EventType)),
+					zap.String("topic", p.config.Topic),
 					zap.Int64("outbox_id", event.ID),
 					zap.Error(err),
 				)
 			}
-
 			continue
 		}
 
-		// An interrupted wait has an ambiguous delivery outcome.
-		// Keep the lease until it expires instead of releasing the record
-		// immediately and potentially racing another Publisher.
+		// Shutdown cancellation is an ambiguous delivery outcome, not a
+		// broker failure. The lease is intentionally left to expire.
 		if errors.Is(deliveryErr, context.Canceled) ||
 			errors.Is(deliveryErr, context.DeadlineExceeded) {
+			recordPublishSpanError(eventSpans[index], deliveryErr)
 			continue
 		}
 
-		retryAfter := p.retryDelay(event.Attempts + 1)
+		if p.metrics != nil {
+			p.metrics.RecordOutboxPublishError(ctx, string(event.Event.EventType))
+		}
+		recordPublishSpanError(eventSpans[index], deliveryErr)
 
+		retryAfter := p.retryDelay(event.Attempts + 1)
 		markCtx, cancel := context.WithTimeout(
 			context.WithoutCancel(ctx),
 			repositoryUpdateTimeout,
 		)
-
 		err := p.repository.MarkFailed(
 			markCtx,
 			event.ID,
@@ -277,13 +349,15 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 			deliveryErr,
 			retryAfter,
 		)
-
 		cancel()
 
 		if err != nil {
 			p.logger.Error(
 				"failed to schedule Outbox retry",
 				zap.String("event_id", event.Event.EventID),
+				zap.Int64("task_id", event.Event.AggregateID),
+				zap.String("event_type", string(event.Event.EventType)),
+				zap.String("topic", p.config.Topic),
 				zap.Int64("outbox_id", event.ID),
 				zap.Error(err),
 			)
@@ -293,7 +367,9 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 		p.logger.Warn(
 			"Kafka event delivery failed; retry scheduled",
 			zap.String("event_id", event.Event.EventID),
-			zap.Int64("outbox_id", event.ID),
+			zap.Int64("task_id", event.Event.AggregateID),
+			zap.String("event_type", string(event.Event.EventType)),
+			zap.String("topic", p.config.Topic),
 			zap.Int("attempt", event.Attempts+1),
 			zap.Duration("retry_after", retryAfter),
 			zap.Error(deliveryErr),
@@ -301,6 +377,14 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 	}
 
 	return len(events), nil
+}
+
+func recordPublishSpanError(span trace.Span, err error) {
+	if span == nil || err == nil {
+		return
+	}
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
 }
 
 func (p *Publisher) retryDelay(attempt int) time.Duration {
