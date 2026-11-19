@@ -16,6 +16,7 @@ func validConfig() Config {
 		RetryBaseDelay:    time.Second,
 		RetryMaxDelay:     30 * time.Second,
 		MaxPendingMessages: 1000,
+		ShutdownTimeout:    30 * time.Second,
 	}
 }
 
