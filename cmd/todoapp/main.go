@@ -106,6 +106,7 @@ func run() (runErr error) {
 		kafkaProducer *kafka_producer.Producer
 		publisherDone   chan error
 		publisherCancel context.CancelFunc
+		publisherConfig outbox_publisher.Config
 	)
 
 	defer func() {
