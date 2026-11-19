@@ -46,6 +46,7 @@ type Worker struct {
 	retryBaseDelay     time.Duration
 	retryMaxDelay      time.Duration
 	maxPendingMessages int
+	shutdownTimeout    time.Duration
 
 	consumer KafkaConsumer
 	producer KafkaProducer
@@ -58,6 +59,7 @@ func NewWorker(
 	dlqTopic string,
 	retryBaseDelay time.Duration,
 	retryMaxDelay time.Duration,
+	shutdownTimeout time.Duration,
 	maxPendingMessages int,
 	consumer KafkaConsumer,
 	producer KafkaProducer,
@@ -75,6 +77,8 @@ func NewWorker(
 		return nil, fmt.Errorf("retry base delay must be positive")
 	case retryMaxDelay < retryBaseDelay:
 		return nil, fmt.Errorf("retry max delay must not be less than base delay")
+	case shutdownTimeout <= 0:
+		return nil, fmt.Errorf("shutdown timeout must be positive")
 	case maxPendingMessages <= 0:
 		return nil, fmt.Errorf("max pending messages must be positive")
 	case consumer == nil:
@@ -93,6 +97,7 @@ func NewWorker(
 		retryBaseDelay:     retryBaseDelay,
 		retryMaxDelay:      retryMaxDelay,
 		maxPendingMessages: maxPendingMessages,
+		shutdownTimeout:    shutdownTimeout,
 		consumer:           consumer,
 		producer:           producer,
 		service:            service,
@@ -109,6 +114,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		"Activity Worker started",
 		zap.String("topic", w.topic),
 		zap.String("dlq_topic", w.dlqTopic),
+		zap.Duration("shutdown_timeout", w.shutdownTimeout),
 	)
 
 	// Messages fetched while partitions are paused are kept here.
@@ -128,6 +134,13 @@ func (w *Worker) Run(ctx context.Context) error {
 			pending = pending[1:]
 		} else {
 			result := w.consumer.Poll(pollTimeout)
+
+			// A message can be returned by Poll at the same time as
+			// shutdown is requested. Do not start another message then.
+			if ctx.Err() != nil {
+				w.logger.Info("Activity Worker stopped before starting another message")
+				return nil
+			}
 
 			if result.Err != nil {
 				if result.Fatal {
@@ -152,7 +165,47 @@ func (w *Worker) Run(ctx context.Context) error {
 			continue
 		}
 
-		if err := w.processMessage(ctx, message, &pending); err != nil {
+		// The signal context controls intake and retry waits, but does not
+		// cancel an operation already in progress. After the shutdown signal,
+		// the operation receives the configured grace period to finish.
+		processCtx, cancelProcess := context.WithCancel(
+			context.WithoutCancel(ctx),
+		)
+		processDone := make(chan struct{})
+		stopGraceTimer := context.AfterFunc(ctx, func() {
+			timer := time.NewTimer(w.shutdownTimeout)
+			defer timer.Stop()
+
+			select {
+			case <-timer.C:
+				cancelProcess()
+			case <-processDone:
+			}
+		})
+
+		err := w.processMessageWithStop(
+			processCtx,
+			ctx,
+			message,
+			&pending,
+		)
+
+		close(processDone)
+		stopGraceTimer()
+		cancelProcess()
+
+		if err != nil {
+			if ctx.Err() != nil {
+				w.logger.Warn(
+					"Activity Worker shutdown interrupted the current message; it will be redelivered",
+					zap.String("topic", message.Topic),
+					zap.Int32("partition", message.Partition),
+					zap.Int64("offset", message.Offset),
+					zap.Error(err),
+				)
+				return nil
+			}
+
 			if errors.Is(err, kafka_consumer.ErrAssignmentLost) {
 				w.logger.Info(
 					"Activity Worker lost partition assignment; message will be redelivered",
@@ -162,11 +215,6 @@ func (w *Worker) Run(ctx context.Context) error {
 				)
 
 				continue
-			}
-
-			if ctx.Err() != nil {
-				w.logger.Info("Activity Worker stopped during message processing")
-				return nil
 			}
 
 			return fmt.Errorf(
@@ -185,6 +233,15 @@ func (w *Worker) processMessage(
 	message *kafka_consumer.Message,
 	pending *[]*kafka_consumer.Message,
 ) error {
+	return w.processMessageWithStop(ctx, ctx, message, pending)
+}
+
+func (w *Worker) processMessageWithStop(
+	ctx context.Context,
+	stopCtx context.Context,
+	message *kafka_consumer.Message,
+	pending *[]*kafka_consumer.Message,
+) error {
 	if !w.consumer.IsAssigned(message) {
 		return kafka_consumer.ErrAssignmentLost
 	}
@@ -195,11 +252,12 @@ func (w *Worker) processMessage(
 			return fmt.Errorf("classify event message: %w", err)
 		}
 
-		return w.moveToDLQ(ctx, message, err, pending)
+		return w.moveToDLQ(ctx, stopCtx, message, err, pending)
 	}
 
 	attempts, paused, err := w.retry(
 		ctx,
+		stopCtx,
 		message,
 		func() error {
 			return w.service.Record(ctx, event)
@@ -213,6 +271,7 @@ func (w *Worker) processMessage(
 
 	paused, err = w.commitWithRetry(
 		ctx,
+		stopCtx,
 		message,
 		pending,
 		paused,
@@ -244,6 +303,7 @@ func (w *Worker) processMessage(
 
 func (w *Worker) moveToDLQ(
 	ctx context.Context,
+	stopCtx context.Context,
 	message *kafka_consumer.Message,
 	cause error,
 	pending *[]*kafka_consumer.Message,
@@ -267,6 +327,7 @@ func (w *Worker) moveToDLQ(
 
 	attempts, paused, err := w.retry(
 		ctx,
+		stopCtx,
 		message,
 		func() error {
 			return w.producer.Publish(
@@ -288,6 +349,7 @@ func (w *Worker) moveToDLQ(
 	// Commit the source offset only after the DLQ Delivery Report succeeds.
 	paused, err = w.commitWithRetry(
 		ctx,
+		stopCtx,
 		message,
 		pending,
 		paused,
@@ -317,6 +379,7 @@ func (w *Worker) moveToDLQ(
 
 func (w *Worker) retry(
 	ctx context.Context,
+	stopCtx context.Context,
 	message *kafka_consumer.Message,
 	operation func() error,
 	pending *[]*kafka_consumer.Message,
@@ -339,6 +402,10 @@ func (w *Worker) retry(
 		)
 	}
 
+	if err := stopCtx.Err(); err != nil {
+		return attempt, false, err
+	}
+
 	if err := w.consumer.Pause(); err != nil {
 		if !w.consumer.IsAssigned(message) {
 			return attempt, false, kafka_consumer.ErrAssignmentLost
@@ -359,6 +426,7 @@ func (w *Worker) retry(
 
 		if err := w.waitBackoff(
 			ctx,
+			stopCtx,
 			message,
 			delay,
 			pending,
@@ -368,6 +436,9 @@ func (w *Worker) retry(
 
 		if !w.consumer.IsAssigned(message) {
 			return attempt, true, kafka_consumer.ErrAssignmentLost
+		}
+		if err := stopCtx.Err(); err != nil {
+			return attempt, true, err
 		}
 
 		attempt++
@@ -397,6 +468,7 @@ func (w *Worker) retry(
 
 func (w *Worker) waitBackoff(
 	ctx context.Context,
+	stopCtx context.Context,
 	currentMessage *kafka_consumer.Message,
 	delay time.Duration,
 	pending *[]*kafka_consumer.Message,
@@ -408,9 +480,16 @@ func (w *Worker) waitBackoff(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if err := stopCtx.Err(); err != nil {
+			return err
+		}
 
 		// Keep polling while the current assignment is paused.
 		result := w.consumer.Poll(pollTimeout)
+
+		if err := stopCtx.Err(); err != nil {
+			return err
+		}
 
 		if result.Err != nil {
 			if result.Fatal {
@@ -446,6 +525,9 @@ func (w *Worker) waitBackoff(
 		case <-ctx.Done():
 			return ctx.Err()
 
+		case <-stopCtx.Done():
+			return stopCtx.Err()
+
 		case <-timer.C:
 			return nil
 
@@ -456,6 +538,7 @@ func (w *Worker) waitBackoff(
 
 func (w *Worker) commitWithRetry(
 	ctx context.Context,
+	stopCtx context.Context,
 	message *kafka_consumer.Message,
 	pending *[]*kafka_consumer.Message,
 	paused bool,
@@ -479,6 +562,9 @@ func (w *Worker) commitWithRetry(
 
 		if !kafka_consumer.IsRetriableError(err) {
 			return paused, fmt.Errorf("commit Kafka offset: %w", err)
+		}
+		if stopCtx.Err() != nil {
+			return paused, stopCtx.Err()
 		}
 
 		if !paused {
@@ -514,6 +600,7 @@ func (w *Worker) commitWithRetry(
 
 		if err := w.waitBackoff(
 			ctx,
+			stopCtx,
 			message,
 			delay,
 			pending,
