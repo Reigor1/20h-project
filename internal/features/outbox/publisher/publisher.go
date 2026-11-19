@@ -100,13 +100,27 @@ func (p *Publisher) Run(ctx context.Context) error {
 			return nil
 		}
 
-		// Do not cancel a batch halfway through delivery when shutdown is
-		// requested. Give the active batch a bounded grace period instead.
-		batchCtx, cancelBatch := context.WithTimeout(
+		// Keep an active batch alive after the shutdown signal, but only
+		// for the configured grace period.
+		batchCtx, cancelBatch := context.WithCancel(
 			context.WithoutCancel(ctx),
-			p.config.ShutdownTimeout,
 		)
+		batchDone := make(chan struct{})
+		stopGraceTimer := context.AfterFunc(ctx, func() {
+			timer := time.NewTimer(p.config.ShutdownTimeout)
+			defer timer.Stop()
+
+			select {
+			case <-timer.C:
+				cancelBatch()
+			case <-batchDone:
+			}
+		})
+
 		claimedCount, err := p.publishBatch(batchCtx)
+
+		close(batchDone)
+		stopGraceTimer()
 		cancelBatch()
 
 		if ctx.Err() != nil {
