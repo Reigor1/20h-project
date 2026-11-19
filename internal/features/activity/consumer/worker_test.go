@@ -24,6 +24,7 @@ type fakeConsumer struct {
 	committed int
 	paused    int
 	resumed   int
+	polls     int
 
 	commitErrors         []error
 	assignmentLost       bool
@@ -35,6 +36,7 @@ func (c *fakeConsumer) Subscribe(string) error {
 }
 
 func (c *fakeConsumer) Poll(time.Duration) kafka_consumer.PollResult {
+	c.polls++
 	if c.loseAssignmentOnPoll {
 		c.assignmentLost = true
 		c.loseAssignmentOnPoll = false
@@ -115,12 +117,13 @@ func (p *fakeProducer) Publish(
 type fakeActivityService struct {
 	sequence *[]string
 	errors   []error
-	calls    int
-	onRecord func()
+	calls              int
+	onRecord           func()
+	waitForContextDone bool
 }
 
 func (s *fakeActivityService) Record(
-	_ context.Context,
+	ctx context.Context,
 	_ core_events.Envelope,
 ) error {
 	s.calls++
@@ -131,6 +134,11 @@ func (s *fakeActivityService) Record(
 
 	if s.onRecord != nil {
 		s.onRecord()
+	}
+
+	if s.waitForContextDone {
+		<-ctx.Done()
+		return ctx.Err()
 	}
 
 	if len(s.errors) == 0 {
@@ -156,6 +164,7 @@ func newTestWorker(
 		"task-events.dlq",
 		time.Millisecond,
 		2*time.Millisecond,
+		time.Second,
 		1000,
 		consumer,
 		producer,
@@ -725,6 +734,99 @@ func TestProcessMessageStopsWhenPendingQueueIsFull(t *testing.T) {
 		t.Errorf("pending messages = %d, want 1", len(pending))
 	}
 
+	if consumer.committed != 0 {
+		t.Errorf("committed messages = %d, want 0", consumer.committed)
+	}
+}
+
+
+func TestRunCommitsCurrentMessageAfterShutdownSignal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	first := newTestEventMessage(t)
+	second := newTestEventMessage(t)
+	second.Offset++
+
+	consumer := &fakeConsumer{
+		results: []kafka_consumer.PollResult{
+			{Message: first},
+			{Message: second},
+		},
+	}
+	service := &fakeActivityService{
+		onRecord: cancel,
+	}
+	worker := newTestWorker(t, consumer, &fakeProducer{}, service)
+
+	if err := worker.Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if service.calls != 1 {
+		t.Errorf("Record() calls = %d, want 1", service.calls)
+	}
+	if consumer.committed != 1 {
+		t.Errorf("committed messages = %d, want 1", consumer.committed)
+	}
+	if consumer.polls != 1 {
+		t.Errorf("Poll() calls = %d, want 1; no further messages should be fetched", consumer.polls)
+	}
+}
+
+func TestRunDoesNotCommitWhenCurrentMessageFailsDuringShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	consumer := &fakeConsumer{
+		results: []kafka_consumer.PollResult{
+			{Message: newTestEventMessage(t)},
+		},
+	}
+	service := &fakeActivityService{
+		onRecord: cancel,
+		errors: []error{
+			errors.New("postgres unavailable"),
+		},
+	}
+	worker := newTestWorker(t, consumer, &fakeProducer{}, service)
+
+	if err := worker.Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v, want graceful stop", err)
+	}
+
+	if service.calls != 1 {
+		t.Errorf("Record() calls = %d, want 1; no retries should start after shutdown", service.calls)
+	}
+	if consumer.committed != 0 {
+		t.Errorf("committed messages = %d, want 0", consumer.committed)
+	}
+}
+
+func TestRunLeavesMessageUncommittedWhenShutdownGraceExpires(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	consumer := &fakeConsumer{
+		results: []kafka_consumer.PollResult{
+			{Message: newTestEventMessage(t)},
+		},
+	}
+	service := &fakeActivityService{
+		onRecord:           cancel,
+		waitForContextDone: true,
+	}
+	worker := newTestWorker(t, consumer, &fakeProducer{}, service)
+	worker.shutdownTimeout = 10 * time.Millisecond
+
+	started := time.Now()
+	if err := worker.Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v, want graceful stop after timeout", err)
+	}
+
+	if time.Since(started) < 10*time.Millisecond {
+		t.Fatal("Run() returned before the shutdown grace period expired")
+	}
 	if consumer.committed != 0 {
 		t.Errorf("committed messages = %d, want 0", consumer.committed)
 	}
