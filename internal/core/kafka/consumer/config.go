@@ -20,6 +20,7 @@ type Config struct {
 	RetryBaseDelay     time.Duration `envconfig:"CONSUMER_RETRY_BASE_DELAY" default:"1s"`
 	RetryMaxDelay      time.Duration `envconfig:"CONSUMER_RETRY_MAX_DELAY" default:"30s"`
 	MaxPendingMessages int           `envconfig:"CONSUMER_MAX_PENDING_MESSAGES" default:"1000"`
+	ShutdownTimeout    time.Duration `envconfig:"CONSUMER_SHUTDOWN_TIMEOUT" default:"30s"`
 }
 
 func NewConfig() (Config, error) {
@@ -84,6 +85,10 @@ func (c Config) Validate() error {
 		return fmt.Errorf(
 			"Kafka Consumer max pending messages must be positive",
 		)
+	}
+
+	if c.ShutdownTimeout <= 0 {
+		return fmt.Errorf("Kafka Consumer shutdown timeout must be positive")
 	}
 
 	return nil
