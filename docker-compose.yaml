@@ -446,6 +446,8 @@ services:
     depends_on:
       otel-collector:
         condition: service_started
+      kafka-exporter:
+        condition: service_started
     restart: unless-stopped
 
   # ----------------------------

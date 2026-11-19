@@ -502,11 +502,11 @@ otel-collector-down:
 
 # Start Prometheus.
 prometheus-up:
-	@docker compose up -d prometheus
+	@docker compose up -d --wait prometheus kafka-exporter
 
 # Stop Prometheus.
 prometheus-down:
-	@docker compose stop prometheus
+	@docker compose stop prometheus kafka-exporter
 
 # Start Loki.
 loki-up:
