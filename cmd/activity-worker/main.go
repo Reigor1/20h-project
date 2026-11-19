@@ -66,25 +66,10 @@ func run() (runErr error) {
 		return fmt.Errorf("initialize Activity Worker observability: %w", err)
 	}
 
-	pgxTracer := observability.NewPostgresTracer()
+	var pool *core_pgx_pool.Pool
 
-	pool, err := core_pgx_pool.NewPool(
-		ctx,
-		core_pgx_pool.NewConfigMust(),
-		pgxTracer,
-	)
-	if err != nil {
-		return fmt.Errorf("initialize PostgreSQL pool: %w", err)
-	}
-	defer pool.Close()
-
-	if err := core_observability_postgres.RegisterPoolMetrics(
-		observability.MeterProvider(),
-		pool,
-	); err != nil {
-		return fmt.Errorf("register Activity Worker PostgreSQL metrics: %w", err)
-	}
-
+	// Shutdown observability while the PostgreSQL pool is still available
+	// for the final metric collection, then close the pool.
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(
 			context.Background(),
@@ -98,7 +83,29 @@ func run() (runErr error) {
 				fmt.Errorf("shutdown Activity Worker observability: %w", err),
 			)
 		}
+
+		if pool != nil {
+			pool.Close()
+		}
 	}()
+
+	pgxTracer := observability.NewPostgresTracer()
+
+	pool, err = core_pgx_pool.NewPool(
+		ctx,
+		core_pgx_pool.NewConfigMust(),
+		pgxTracer,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize PostgreSQL pool: %w", err)
+	}
+
+	if err := core_observability_postgres.RegisterPoolMetrics(
+		observability.MeterProvider(),
+		pool,
+	); err != nil {
+		return fmt.Errorf("register Activity Worker PostgreSQL metrics: %w", err)
+	}
 
 	kafkaConfig, err := kafka_consumer.NewConfig()
 	if err != nil {
