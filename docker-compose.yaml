@@ -5,6 +5,7 @@ services:
   # =====================================================
 
   todoapp:
+    stop_grace_period: 45s
     build:
       context: ${PROJECT_ROOT}
       dockerfile: ${PROJECT_ROOT}/cmd/todoapp/Dockerfile
@@ -60,6 +61,7 @@ services:
   # =====================================================
 
   activity-worker:
+    stop_grace_period: 45s
     build:
       context: ${PROJECT_ROOT}
       dockerfile: ${PROJECT_ROOT}/cmd/activity-worker/Dockerfile
