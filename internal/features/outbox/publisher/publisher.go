@@ -95,7 +95,19 @@ func (p *Publisher) Run(ctx context.Context) error {
 	)
 
 	for {
-		claimedCount, err := p.publishBatch(ctx)
+		if ctx.Err() != nil {
+			p.logger.Info("Outbox Publisher stopping")
+			return nil
+		}
+
+		// Do not cancel a batch halfway through delivery when shutdown is
+		// requested. Give the active batch a bounded grace period instead.
+		batchCtx, cancelBatch := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			p.config.ShutdownTimeout,
+		)
+		claimedCount, err := p.publishBatch(batchCtx)
+		cancelBatch()
 
 		if ctx.Err() != nil {
 			p.logger.Info("Outbox Publisher stopping")
