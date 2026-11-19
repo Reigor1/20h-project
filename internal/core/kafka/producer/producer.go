@@ -13,6 +13,7 @@ type Message struct {
 	Key       []byte
 	Value     []byte
 	Partition *int32
+	Headers   []kafka.Header
 }
 
 type Producer struct {
@@ -130,9 +131,10 @@ func (p *Producer) PublishBatch(
 					Topic:     &topic,
 					Partition: partition,
 				},
-				Key:    message.Key,
-				Value:  message.Value,
-				Opaque: index,
+				Key:     message.Key,
+				Value:   message.Value,
+				Headers: message.Headers,
+				Opaque:  index,
 			},
 			deliveryChannel,
 		)

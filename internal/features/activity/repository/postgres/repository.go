@@ -23,14 +23,14 @@ func NewActivityRepository(
 func (r *ActivityRepository) Record(
 	ctx context.Context,
 	event core_events.Envelope,
-) error {
+) (bool, error) {
 	txCtx, cancel, tx, err := core_postgres_pool.BeginTransaction(
 		ctx,
 		r.pool,
 		r.pool.OpTimeout(),
 	)
 	if err != nil {
-		return fmt.Errorf("begin Activity transaction: %w", err)
+		return false, fmt.Errorf("begin Activity transaction: %w", err)
 	}
 
 	defer cancel()
@@ -50,7 +50,7 @@ func (r *ActivityRepository) Record(
 	ON CONFLICT (event_id) DO NOTHING;
 	`
 
-	_, err = tx.Exec(
+	tag, err := tx.Exec(
 		txCtx,
 		query,
 		event.EventID,
@@ -62,12 +62,12 @@ func (r *ActivityRepository) Record(
 		event.Payload,
 	)
 	if err != nil {
-		return fmt.Errorf("insert Activity event: %w", err)
+		return false, fmt.Errorf("insert Activity event: %w", err)
 	}
 
 	if err := tx.Commit(txCtx); err != nil {
-		return fmt.Errorf("commit Activity transaction: %w", err)
+		return false, fmt.Errorf("commit Activity transaction: %w", err)
 	}
 
-	return nil
+	return tag.RowsAffected() == 1, nil
 }

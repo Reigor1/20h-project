@@ -19,6 +19,7 @@ type partitionKey struct {
 type Message struct {
 	Value     []byte
 	Key       []byte
+	Headers   []kafka.Header
 	Topic     string
 	Partition int32
 	Offset    int64
@@ -328,6 +329,7 @@ func (c *Consumer) Poll(timeout time.Duration) PollResult {
 			Message: &Message{
 				Value:           e.Value,
 				Key:             e.Key,
+				Headers:         e.Headers,
 				Topic:           topic,
 				Partition:       e.TopicPartition.Partition,
 				Offset:          int64(e.TopicPartition.Offset),

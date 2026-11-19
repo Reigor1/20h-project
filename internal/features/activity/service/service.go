@@ -24,7 +24,7 @@ type ActivityRepository interface {
 	Record(
 		ctx context.Context,
 		event core_events.Envelope,
-	) error
+	) (inserted bool, err error)
 
 	GetActivities(
 		ctx context.Context,
@@ -49,14 +49,15 @@ func NewActivityService(
 func (s *ActivityService) Record(
 	ctx context.Context,
 	event core_events.Envelope,
-) error {
+) (bool, error) {
 	if err := event.Validate(); err != nil {
-		return fmt.Errorf("validate Activity event: %w", err)
+		return false, fmt.Errorf("validate Activity event: %w", err)
 	}
 
-	if err := s.repository.Record(ctx, event); err != nil {
-		return fmt.Errorf("record Activity event: %w", err)
+	inserted, err := s.repository.Record(ctx, event)
+	if err != nil {
+		return false, fmt.Errorf("record Activity event: %w", err)
 	}
 
-	return nil
+	return inserted, nil
 }

@@ -8,6 +8,7 @@ import (
 
 	core_events "github.com/Reigor1/20h-project/internal/core/events"
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 var ErrLeaseLost = errors.New("outbox lease lost")
@@ -17,10 +18,12 @@ type OutboxRepository struct {
 }
 
 type ClaimedEvent struct {
-	ID         int64
-	Event      core_events.Envelope
-	Attempts   int
-	LeaseToken string
+	ID          int64
+	Event       core_events.Envelope
+	TraceParent string
+	TraceState  string
+	Attempts    int
+	LeaseToken  string
 }
 
 func NewOutboxRepository(
@@ -40,6 +43,9 @@ func (r *OutboxRepository) Create(
 		return fmt.Errorf("validate outbox event: %w", err)
 	}
 
+	traceCarrier := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, traceCarrier)
+
 	query := `
 	INSERT INTO todoapp.outbox (
 		event_id,
@@ -49,9 +55,11 @@ func (r *OutboxRepository) Create(
 		aggregate_id,
 		aggregate_version,
 		occurred_at,
-		payload
+		payload,
+		traceparent,
+		tracestate
 	)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb);
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10);
 	`
 
 	_, err := executor.Exec(
@@ -65,6 +73,8 @@ func (r *OutboxRepository) Create(
 		event.AggregateVersion,
 		event.OccurredAt,
 		event.Payload,
+		traceCarrier.Get("traceparent"),
+		traceCarrier.Get("tracestate"),
 	)
 	if err != nil {
 		return fmt.Errorf("insert outbox event: %w", err)
@@ -141,6 +151,8 @@ func (r *OutboxRepository) ClaimPending(
 		claimed.aggregate_version,
 		claimed.occurred_at,
 		claimed.payload,
+		claimed.traceparent,
+		claimed.tracestate,
 		claimed.attempts,
 		claimed.lease_token::TEXT;
 	`
@@ -171,6 +183,8 @@ func (r *OutboxRepository) ClaimPending(
 			&event.Event.AggregateVersion,
 			&event.Event.OccurredAt,
 			&event.Event.Payload,
+			&event.TraceParent,
+			&event.TraceState,
 			&event.Attempts,
 			&event.LeaseToken,
 		); err != nil {
@@ -275,4 +289,31 @@ func (r *OutboxRepository) MarkFailed(
 	}
 
 	return nil
+}
+
+func (r *OutboxRepository) PendingStats(
+	ctx context.Context,
+) (pending int64, oldestEventAgeSeconds float64, err error) {
+	ctx, cancel := context.WithTimeout(ctx, r.pool.OpTimeout())
+	defer cancel()
+
+	query := `
+	SELECT
+		COUNT(*)::BIGINT,
+		COALESCE(
+			EXTRACT(EPOCH FROM (NOW() - MIN(created_at))),
+			0
+		)::DOUBLE PRECISION
+	FROM todoapp.outbox
+	WHERE published_at IS NULL;
+	`
+
+	if err := r.pool.QueryRow(ctx, query).Scan(
+		&pending,
+		&oldestEventAgeSeconds,
+	); err != nil {
+		return 0, 0, fmt.Errorf("query pending Outbox metrics: %w", err)
+	}
+
+	return pending, oldestEventAgeSeconds, nil
 }
