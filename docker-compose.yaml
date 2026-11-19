@@ -177,7 +177,11 @@ services:
 
 
   kafka-2:
-    image: apache/kafka:4.4.0
+    build:
+      context: ${PROJECT_ROOT}/monitoring/kafka
+      dockerfile: Dockerfile
+      args:
+        KAFKA_IMAGE: apache/kafka:4.4.0
     hostname: kafka-2
     container_name: todoapp-kafka-2
     environment:
@@ -211,6 +215,7 @@ services:
       # Local development
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+      KAFKA_OPTS: "-javaagent:/opt/kafka/libs/jmx_prometheus_javaagent.jar=9404:/opt/kafka/config/jmx-exporter.yml"
 
     ports:
       - "127.0.0.1:39092:9092"
@@ -231,7 +236,11 @@ services:
 
 
   kafka-3:
-    image: apache/kafka:4.4.0
+    build:
+      context: ${PROJECT_ROOT}/monitoring/kafka
+      dockerfile: Dockerfile
+      args:
+        KAFKA_IMAGE: apache/kafka:4.4.0
     hostname: kafka-3
     container_name: todoapp-kafka-3
     environment:
@@ -265,6 +274,7 @@ services:
       # Local development
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+      KAFKA_OPTS: "-javaagent:/opt/kafka/libs/jmx_prometheus_javaagent.jar=9404:/opt/kafka/config/jmx-exporter.yml"
 
     ports:
       - "127.0.0.1:49092:9092"
