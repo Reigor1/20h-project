@@ -215,6 +215,13 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 	}
 
 	for index, event := range events {
+		// If the batch grace period expired, leave remaining rows leased.
+		// Lease expiry makes them eligible for at-least-once redelivery and
+		// avoids extending shutdown with a sequence of repository updates.
+		if ctx.Err() != nil {
+			continue
+		}
+
 		deliveryErr := deliveryErrors[index]
 
 		if deliveryErr == nil {
