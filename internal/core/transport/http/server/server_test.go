@@ -121,10 +121,20 @@ func TestRegisterAPIRoutersKeepsVersionsSeparate(t *testing.T) {
 }
 
 func TestRegisterSwagger(t *testing.T) {
-	server := NewHTTPServer(Config{}, &core_logger.Logger{Logger: zap.NewNop()})
+	logger := &core_logger.Logger{Logger: zap.NewNop()}
+	server := NewHTTPServer(
+		Config{},
+		logger,
+		core_http_middleware.CORS(),
+		core_http_middleware.RequestID(),
+		core_http_middleware.Logger(logger),
+		core_http_middleware.Panic(),
+	)
 	server.RegisterSwagger()
+
+	handler := core_http_middleware.ChainMiddleware(server.mux, server.middleware...)
 	response := httptest.NewRecorder()
-	server.mux.ServeHTTP(
+	handler.ServeHTTP(
 		response,
 		httptest.NewRequest(http.MethodGet, "/swagger/doc.json", nil),
 	)
