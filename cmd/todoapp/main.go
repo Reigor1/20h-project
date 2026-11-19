@@ -104,19 +104,30 @@ func run() (runErr error) {
 		pool          *core_pgx_pool.Pool
 		cache         core_redis.Cache
 		kafkaProducer *kafka_producer.Producer
-		publisherDone chan error
+		publisherDone   chan error
+		publisherCancel context.CancelFunc
 	)
 
 	defer func() {
 		// Stop application work before shutting down its dependencies.
 		cancel()
 
+		if publisherCancel != nil {
+			publisherCancel()
+		}
+
 		if publisherDone != nil {
-			if err := <-publisherDone; err != nil {
-				logger.Error(
-					"Outbox Publisher stopped with error",
-					zap.Error(err),
-				)
+			select {
+			case err := <-publisherDone:
+				if err != nil {
+					logger.Error(
+						"Outbox Publisher stopped with error",
+						zap.Error(err),
+					)
+				}
+			case <-time.After(publisherConfig.ShutdownTimeout + time.Second):
+				logger.Error("Outbox Publisher shutdown timed out; active lease will expire")
+				runErr = errors.Join(runErr, fmt.Errorf("Outbox Publisher shutdown timed out"))
 			}
 		}
 
@@ -305,9 +316,11 @@ func run() (runErr error) {
 	}
 
 	publisherDone = make(chan error, 1)
+	publisherCtx, stopPublisher := context.WithCancel(context.Background())
+	publisherCancel = stopPublisher
 
 	go func() {
-		publisherDone <- publisher.Run(ctx)
+		publisherDone <- publisher.Run(publisherCtx)
 	}()
 
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
