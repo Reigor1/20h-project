@@ -320,6 +320,15 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 					zap.Int64("outbox_id", event.ID),
 					zap.Error(err),
 				)
+			} else {
+				p.logger.Info(
+					"Outbox event published to Kafka",
+					zap.String("event_id", event.Event.EventID),
+					zap.Int64("task_id", event.Event.AggregateID),
+					zap.String("event_type", string(event.Event.EventType)),
+					zap.String("topic", p.config.Topic),
+					zap.Int64("outbox_id", event.ID),
+				)
 			}
 			continue
 		}
