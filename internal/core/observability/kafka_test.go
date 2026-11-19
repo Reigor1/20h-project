@@ -52,14 +52,14 @@ func TestKafkaMetricsRecordsApplicationMetrics(t *testing.T) {
 	}
 	for _, name := range []string{
 		"outbox_pending_events",
-		"outbox_oldest_event_age",
-		"outbox_published",
-		"outbox_publish_errors",
-		"activity_events_processed",
-		"activity_events_failed",
-		"activity_events_duplicate",
-		"activity_dlq_messages",
-		"activity_processing_duration",
+		"outbox_oldest_event_age_seconds",
+		"outbox_published_total",
+		"outbox_publish_errors_total",
+		"activity_events_processed_total",
+		"activity_events_failed_total",
+		"activity_events_duplicate_total",
+		"activity_dlq_messages_total",
+		"activity_processing_duration_seconds",
 	} {
 		if !got[name] {
 			t.Errorf("metric %q was not collected", name)
