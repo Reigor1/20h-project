@@ -13,6 +13,8 @@ import (
 	kafka_consumer "github.com/Reigor1/20h-project/internal/core/kafka/consumer"
 	kafka_producer "github.com/Reigor1/20h-project/internal/core/kafka/producer"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
+	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
+	core_observability_postgres "github.com/Reigor1/20h-project/internal/core/observability/postgres"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
 	activity_consumer "github.com/Reigor1/20h-project/internal/features/activity/consumer"
 	activity_postgres_repository "github.com/Reigor1/20h-project/internal/features/activity/repository/postgres"
@@ -52,15 +54,51 @@ func run() (runErr error) {
 		}
 	}()
 
+	observability, err := core_observability.New(
+		ctx,
+		core_observability.Config{
+			ServiceName:           "20h-project-activity-worker",
+			ServiceVersion:        os.Getenv("SERVICE_VERSION"),
+			DeploymentEnvironment: os.Getenv("DEPLOYMENT_ENVIRONMENT"),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Activity Worker observability: %w", err)
+	}
+
+	pgxTracer := observability.NewPostgresTracer()
+
 	pool, err := core_pgx_pool.NewPool(
 		ctx,
 		core_pgx_pool.NewConfigMust(),
-		nil,
+		pgxTracer,
 	)
 	if err != nil {
 		return fmt.Errorf("initialize PostgreSQL pool: %w", err)
 	}
 	defer pool.Close()
+
+	if err := core_observability_postgres.RegisterPoolMetrics(
+		observability.MeterProvider(),
+		pool,
+	); err != nil {
+		return fmt.Errorf("register Activity Worker PostgreSQL metrics: %w", err)
+	}
+
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer shutdownCancel()
+
+		if err := observability.Shutdown(shutdownCtx); err != nil {
+			runErr = errors.Join(
+				runErr,
+				fmt.Errorf("shutdown Activity Worker observability: %w", err),
+			)
+		}
+	}()
 
 	kafkaConfig, err := kafka_consumer.NewConfig()
 	if err != nil {
