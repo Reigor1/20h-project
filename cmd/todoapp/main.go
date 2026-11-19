@@ -250,7 +250,7 @@ func run() (runErr error) {
 		return fmt.Errorf("load Kafka Producer config: %w", err)
 	}
 
-	publisherConfig, err := outbox_publisher.NewConfig()
+	publisherConfig, err = outbox_publisher.NewConfig()
 	if err != nil {
 		return fmt.Errorf("load Outbox Publisher config: %w", err)
 	}
