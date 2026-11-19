@@ -118,7 +118,11 @@ services:
   # =====================================================
 
   kafka-1:
-    image: apache/kafka:4.4.0
+    build:
+      context: ${PROJECT_ROOT}/monitoring/kafka
+      dockerfile: Dockerfile
+      args:
+        KAFKA_IMAGE: apache/kafka:4.4.0
     hostname: kafka-1
     container_name: todoapp-kafka-1
     environment:
@@ -152,6 +156,7 @@ services:
       # Local development
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+      KAFKA_OPTS: "-javaagent:/opt/kafka/libs/jmx_prometheus_javaagent.jar=9404:/opt/kafka/config/jmx-exporter.yml"
 
     ports:
       - "127.0.0.1:29092:9092"
@@ -441,6 +446,29 @@ services:
     depends_on:
       otel-collector:
         condition: service_started
+    restart: unless-stopped
+
+  # ----------------------------
+  # Kafka Metrics Exporter
+  # ----------------------------
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: todoapp-kafka-exporter
+    command:
+      - --kafka.server=kafka-1:19092
+      - --kafka.server=kafka-2:19092
+      - --kafka.server=kafka-3:19092
+      - --web.listen-address=:9308
+    ports:
+      - "127.0.0.1:9308:9308"
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
     restart: unless-stopped
 
   # ----------------------------

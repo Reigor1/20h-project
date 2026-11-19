@@ -36,49 +36,49 @@ func NewKafkaMetrics(
 	var err error
 
 	if metrics.outboxPublished, err = meter.Int64Counter(
-		"outbox_published",
+		"outbox_published_total",
 		metric.WithDescription("Number of Outbox events acknowledged by Kafka."),
 		metric.WithUnit("{event}"),
 	); err != nil {
 		return nil, fmt.Errorf("create Outbox published counter: %w", err)
 	}
 	if metrics.outboxPublishErrors, err = meter.Int64Counter(
-		"outbox_publish_errors",
+		"outbox_publish_errors_total",
 		metric.WithDescription("Number of failed Kafka Outbox publication attempts."),
 		metric.WithUnit("{event}"),
 	); err != nil {
 		return nil, fmt.Errorf("create Outbox publish errors counter: %w", err)
 	}
 	if metrics.activityProcessed, err = meter.Int64Counter(
-		"activity_events_processed",
+		"activity_events_processed_total",
 		metric.WithDescription("Number of Activity events persisted and committed."),
 		metric.WithUnit("{event}"),
 	); err != nil {
 		return nil, fmt.Errorf("create Activity processed counter: %w", err)
 	}
 	if metrics.activityFailed, err = meter.Int64Counter(
-		"activity_events_failed",
-		metric.WithDescription("Number of permanent Activity events transferred to DLQ."),
+		"activity_events_failed_total",
+		metric.WithDescription("Number of Activity processing attempts that failed."),
 		metric.WithUnit("{event}"),
 	); err != nil {
 		return nil, fmt.Errorf("create Activity failed counter: %w", err)
 	}
 	if metrics.activityDuplicate, err = meter.Int64Counter(
-		"activity_events_duplicate",
+		"activity_events_duplicate_total",
 		metric.WithDescription("Number of duplicate Activity deliveries successfully committed."),
 		metric.WithUnit("{event}"),
 	); err != nil {
 		return nil, fmt.Errorf("create Activity duplicate counter: %w", err)
 	}
 	if metrics.activityDLQMessages, err = meter.Int64Counter(
-		"activity_dlq_messages",
+		"activity_dlq_messages_total",
 		metric.WithDescription("Number of messages successfully published to the Activity DLQ."),
 		metric.WithUnit("{event}"),
 	); err != nil {
 		return nil, fmt.Errorf("create Activity DLQ counter: %w", err)
 	}
 	if metrics.activityDuration, err = meter.Float64Histogram(
-		"activity_processing_duration",
+		"activity_processing_duration_seconds",
 		metric.WithDescription("Activity event processing duration, including retries and offset commit."),
 		metric.WithUnit("s"),
 	); err != nil {
@@ -95,7 +95,7 @@ func NewKafkaMetrics(
 			return nil, fmt.Errorf("create Outbox pending gauge: %w", err)
 		}
 		oldestAgeGauge, err := meter.Float64ObservableGauge(
-			"outbox_oldest_event_age",
+			"outbox_oldest_event_age_seconds",
 			metric.WithDescription("Age in seconds of the oldest unpublished Outbox event."),
 			metric.WithUnit("s"),
 		)
