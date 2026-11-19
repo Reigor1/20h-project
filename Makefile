@@ -15,6 +15,10 @@ export PROJECT_ROOT := $(CURDIR)
 # Environment Management
 # =====================================================
 
+# ----------------------------
+# PostgreSQL
+# ----------------------------
+
 # Start the PostgreSQL development environment.
 env-postgres-up:
 	@docker compose up -d todoapp-postgres
@@ -322,6 +326,10 @@ swagger-gen:
 # Testing
 # =====================================================
 
+# -----------------------------------------------------
+# Integration Testing
+# -----------------------------------------------------
+
 # Run all integration test suites sequentially.
 tests-integration: 
 	@$(MAKE) test-integration-pgx
@@ -394,6 +402,10 @@ test-integration-events-migrations:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
 
+# -----------------------------------------------------
+# End-to-End Testing
+# -----------------------------------------------------
+
 # Run all API end-to-end test suites.
 tests-e2e:
 	@$(MAKE) test-e2e-api
@@ -407,6 +419,12 @@ test-e2e-api:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml exec -T postgres-test \
 			sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
 			< "${PROJECT_ROOT}/migrations/000001_init.up.sql" && \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml exec -T postgres-test \
+			sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
+			< "${PROJECT_ROOT}/migrations/000002_create_outbox.up.sql" && \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml exec -T postgres-test \
+			sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
+			< "${PROJECT_ROOT}/migrations/000003_create_task_activity.up.sql" && \
 		export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
 		go test -count=1 -v -run \
 			'^TestApiE2E$$' \
@@ -420,7 +438,7 @@ test-e2e-api:
 # -----------------------------------------------------
 
 test-observability:
-	@go run ./tests/e2e/observability
+	@go run ${PROJECT_ROOT}/tests/e2e/observability
 
 # Run load-testing profiles against an already running application.
 # Usage: make test-load [PROFILE=standard|ramp-up|steady-state|stress|all]
@@ -434,7 +452,7 @@ USERS ?= 10
 TASKS_PER_USER ?= 2
 
 test-load:
-	@go run ./tests/e2e/observability \
+	@go run ${PROJECT_ROOT}/tests/e2e/observability \
 		-scenario=load \
 		-load-profile=$(PROFILE) \
 		-stage-duration=$(STAGE_DURATION) \
