@@ -5,7 +5,6 @@ services:
   # =====================================================
 
   todoapp:
-    stop_grace_period: 45s
     build:
       context: ${PROJECT_ROOT}
       dockerfile: ${PROJECT_ROOT}/cmd/todoapp/Dockerfile
@@ -52,7 +51,6 @@ services:
       otel-collector:
         condition: service_started
 
-    stop_grace_period: 1m
     restart: always
 
 
