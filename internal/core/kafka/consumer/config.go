@@ -17,8 +17,9 @@ type Config struct {
 	DLQTopic        string `envconfig:"CONSUMER_DLQ_TOPIC" default:"task-events.dlq"`
 	AutoOffsetReset string `envconfig:"CONSUMER_AUTO_OFFSET_RESET" default:"earliest"`
 
-	RetryBaseDelay time.Duration `envconfig:"CONSUMER_RETRY_BASE_DELAY" default:"1s"`
-	RetryMaxDelay  time.Duration `envconfig:"CONSUMER_RETRY_MAX_DELAY" default:"30s"`
+	RetryBaseDelay     time.Duration `envconfig:"CONSUMER_RETRY_BASE_DELAY" default:"1s"`
+	RetryMaxDelay      time.Duration `envconfig:"CONSUMER_RETRY_MAX_DELAY" default:"30s"`
+	MaxPendingMessages int           `envconfig:"CONSUMER_MAX_PENDING_MESSAGES" default:"1000"`
 }
 
 func NewConfig() (Config, error) {
@@ -76,6 +77,12 @@ func (c Config) Validate() error {
 	if c.RetryMaxDelay < c.RetryBaseDelay {
 		return fmt.Errorf(
 			"Kafka Consumer retry max delay must not be less than base delay",
+		)
+	}
+
+	if c.MaxPendingMessages <= 0 {
+		return fmt.Errorf(
+			"Kafka Consumer max pending messages must be positive",
 		)
 	}
 

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+
 	core_events "github.com/Reigor1/20h-project/internal/core/events"
 	kafka_consumer "github.com/Reigor1/20h-project/internal/core/kafka/consumer"
 	kafka_producer "github.com/Reigor1/20h-project/internal/core/kafka/producer"
@@ -22,6 +24,10 @@ type fakeConsumer struct {
 	committed int
 	paused    int
 	resumed   int
+
+	commitErrors         []error
+	assignmentLost       bool
+	loseAssignmentOnPoll bool
 }
 
 func (c *fakeConsumer) Subscribe(string) error {
@@ -29,6 +35,11 @@ func (c *fakeConsumer) Subscribe(string) error {
 }
 
 func (c *fakeConsumer) Poll(time.Duration) kafka_consumer.PollResult {
+	if c.loseAssignmentOnPoll {
+		c.assignmentLost = true
+		c.loseAssignmentOnPoll = false
+	}
+
 	if len(c.results) == 0 {
 		return kafka_consumer.PollResult{}
 	}
@@ -40,8 +51,15 @@ func (c *fakeConsumer) Poll(time.Duration) kafka_consumer.PollResult {
 }
 
 func (c *fakeConsumer) CommitMessage(
-	*kafka_consumer.Message,
+	_ *kafka_consumer.Message,
 ) error {
+	if len(c.commitErrors) > 0 {
+		err := c.commitErrors[0]
+		c.commitErrors = c.commitErrors[1:]
+
+		return err
+	}
+
 	c.committed++
 
 	if c.sequence != nil {
@@ -49,6 +67,12 @@ func (c *fakeConsumer) CommitMessage(
 	}
 
 	return nil
+}
+
+func (c *fakeConsumer) IsAssigned(
+	_ *kafka_consumer.Message,
+) bool {
+	return !c.assignmentLost
 }
 
 func (c *fakeConsumer) Pause() error {
@@ -132,6 +156,7 @@ func newTestWorker(
 		"task-events.dlq",
 		time.Millisecond,
 		2*time.Millisecond,
+		1000,
 		consumer,
 		producer,
 		service,
@@ -565,5 +590,142 @@ func TestRetryDelay(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestProcessMessageRetriesCommit(t *testing.T) {
+	consumer := &fakeConsumer{
+		commitErrors: []error{
+			kafka.NewError(
+				kafka.ErrTransport,
+				"temporary broker transport error",
+				false,
+			),
+		},
+	}
+
+	service := &fakeActivityService{}
+	worker := newTestWorker(
+		t,
+		consumer,
+		&fakeProducer{},
+		service,
+	)
+
+	var pending []*kafka_consumer.Message
+
+	err := worker.processMessage(
+		context.Background(),
+		newTestEventMessage(t),
+		&pending,
+	)
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+
+	if consumer.committed != 1 {
+		t.Errorf("committed messages = %d, want 1", consumer.committed)
+	}
+
+	if consumer.paused != 1 || consumer.resumed != 1 {
+		t.Errorf(
+			"Pause()/Resume() = %d/%d, want 1/1",
+			consumer.paused,
+			consumer.resumed,
+		)
+	}
+}
+
+func TestProcessMessageStopsRetryAfterAssignmentLoss(t *testing.T) {
+	consumer := &fakeConsumer{
+		loseAssignmentOnPoll: true,
+	}
+
+	service := &fakeActivityService{
+		errors: []error{
+			errors.New("postgres unavailable"),
+		},
+	}
+
+	worker := newTestWorker(
+		t,
+		consumer,
+		&fakeProducer{},
+		service,
+	)
+
+	var pending []*kafka_consumer.Message
+
+	err := worker.processMessage(
+		context.Background(),
+		newTestEventMessage(t),
+		&pending,
+	)
+
+	if !errors.Is(err, kafka_consumer.ErrAssignmentLost) {
+		t.Fatalf(
+			"processMessage() error = %v, want ErrAssignmentLost",
+			err,
+		)
+	}
+
+	if consumer.committed != 0 {
+		t.Errorf("committed messages = %d, want 0", consumer.committed)
+	}
+
+	if consumer.resumed != 1 {
+		t.Errorf("Resume() calls = %d, want 1", consumer.resumed)
+	}
+}
+
+func TestProcessMessageStopsWhenPendingQueueIsFull(t *testing.T) {
+	firstMessage := newTestEventMessage(t)
+	secondMessage := newTestEventMessage(t)
+	secondMessage.Offset = 11
+	thirdMessage := newTestEventMessage(t)
+	thirdMessage.Offset = 12
+
+	consumer := &fakeConsumer{
+		results: []kafka_consumer.PollResult{
+			{Message: secondMessage},
+			{Message: thirdMessage},
+		},
+	}
+
+	service := &fakeActivityService{
+		errors: []error{
+			errors.New("postgres unavailable"),
+		},
+	}
+
+	worker := newTestWorker(
+		t,
+		consumer,
+		&fakeProducer{},
+		service,
+	)
+	worker.maxPendingMessages = 1
+	worker.retryBaseDelay = time.Second
+
+	var pending []*kafka_consumer.Message
+
+	err := worker.processMessage(
+		context.Background(),
+		firstMessage,
+		&pending,
+	)
+	if !errors.Is(err, ErrPendingQueueFull) {
+		t.Fatalf(
+			"processMessage() error = %v, want ErrPendingQueueFull",
+			err,
+		)
+	}
+
+	if len(pending) != 1 {
+		t.Errorf("pending messages = %d, want 1", len(pending))
+	}
+
+	if consumer.committed != 0 {
+		t.Errorf("committed messages = %d, want 0", consumer.committed)
 	}
 }

@@ -7,14 +7,15 @@ import (
 
 func validConfig() Config {
 	return Config{
-		BootstrapServers: "localhost:29092",
-		GroupID:          "activity-workers",
-		ClientID:         "activity-worker",
-		Topic:            "task-events",
-		DLQTopic:         "task-events.dlq",
-		AutoOffsetReset:  "earliest",
-		RetryBaseDelay:   time.Second,
-		RetryMaxDelay:    30 * time.Second,
+		BootstrapServers:  "localhost:29092",
+		GroupID:           "activity-workers",
+		ClientID:          "activity-worker",
+		Topic:             "task-events",
+		DLQTopic:          "task-events.dlq",
+		AutoOffsetReset:   "earliest",
+		RetryBaseDelay:    time.Second,
+		RetryMaxDelay:     30 * time.Second,
+		MaxPendingMessages: 1000,
 	}
 }
 
@@ -51,6 +52,12 @@ func TestConfigValidateRetrySettings(t *testing.T) {
 			name: "same source and DLQ topics",
 			modify: func(config *Config) {
 				config.DLQTopic = config.Topic
+			},
+		},
+		{
+			name: "zero max pending messages",
+			modify: func(config *Config) {
+				config.MaxPendingMessages = 0
 			},
 		},
 	}

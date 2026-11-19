@@ -17,12 +17,15 @@ import (
 
 const pollTimeout = 100 * time.Millisecond
 
+var ErrPendingQueueFull = errors.New("Kafka pending queue is full")
+
 type KafkaConsumer interface {
 	Subscribe(topic string) error
 	Poll(timeout time.Duration) kafka_consumer.PollResult
 	CommitMessage(message *kafka_consumer.Message) error
 	Pause() error
 	Resume() error
+	IsAssigned(message *kafka_consumer.Message) bool
 }
 
 type KafkaProducer interface {
@@ -38,10 +41,11 @@ type ActivityService interface {
 }
 
 type Worker struct {
-	topic          string
-	dlqTopic       string
-	retryBaseDelay time.Duration
-	retryMaxDelay  time.Duration
+	topic              string
+	dlqTopic           string
+	retryBaseDelay     time.Duration
+	retryMaxDelay      time.Duration
+	maxPendingMessages int
 
 	consumer KafkaConsumer
 	producer KafkaProducer
@@ -54,6 +58,7 @@ func NewWorker(
 	dlqTopic string,
 	retryBaseDelay time.Duration,
 	retryMaxDelay time.Duration,
+	maxPendingMessages int,
 	consumer KafkaConsumer,
 	producer KafkaProducer,
 	service ActivityService,
@@ -70,6 +75,8 @@ func NewWorker(
 		return nil, fmt.Errorf("retry base delay must be positive")
 	case retryMaxDelay < retryBaseDelay:
 		return nil, fmt.Errorf("retry max delay must not be less than base delay")
+	case maxPendingMessages <= 0:
+		return nil, fmt.Errorf("max pending messages must be positive")
 	case consumer == nil:
 		return nil, fmt.Errorf("Kafka Consumer must not be nil")
 	case producer == nil:
@@ -81,14 +88,15 @@ func NewWorker(
 	}
 
 	return &Worker{
-		topic:          topic,
-		dlqTopic:       dlqTopic,
-		retryBaseDelay: retryBaseDelay,
-		retryMaxDelay:  retryMaxDelay,
-		consumer:       consumer,
-		producer:       producer,
-		service:        service,
-		logger:         logger,
+		topic:              topic,
+		dlqTopic:           dlqTopic,
+		retryBaseDelay:     retryBaseDelay,
+		retryMaxDelay:      retryMaxDelay,
+		maxPendingMessages: maxPendingMessages,
+		consumer:           consumer,
+		producer:           producer,
+		service:            service,
+		logger:             logger,
 	}, nil
 }
 
@@ -145,6 +153,17 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 
 		if err := w.processMessage(ctx, message, &pending); err != nil {
+			if errors.Is(err, kafka_consumer.ErrAssignmentLost) {
+				w.logger.Info(
+					"Activity Worker lost partition assignment; message will be redelivered",
+					zap.String("topic", message.Topic),
+					zap.Int32("partition", message.Partition),
+					zap.Int64("offset", message.Offset),
+				)
+
+				continue
+			}
+
 			if ctx.Err() != nil {
 				w.logger.Info("Activity Worker stopped during message processing")
 				return nil
@@ -166,6 +185,10 @@ func (w *Worker) processMessage(
 	message *kafka_consumer.Message,
 	pending *[]*kafka_consumer.Message,
 ) error {
+	if !w.consumer.IsAssigned(message) {
+		return kafka_consumer.ErrAssignmentLost
+	}
+
 	event, err := core_events.Unmarshal(message.Value)
 	if err != nil {
 		if !isPermanentMessageError(err) {
@@ -177,6 +200,7 @@ func (w *Worker) processMessage(
 
 	attempts, paused, err := w.retry(
 		ctx,
+		message,
 		func() error {
 			return w.service.Record(ctx, event)
 		},
@@ -184,27 +208,23 @@ func (w *Worker) processMessage(
 		"record Activity event",
 	)
 	if err != nil {
-		return err
+		return w.resumeAfterAssignmentLoss(paused, err)
 	}
 
-	commitErr := w.consumer.CommitMessage(message)
+	paused, err = w.commitWithRetry(
+		ctx,
+		message,
+		pending,
+		paused,
+	)
+	if err != nil {
+		return w.resumeAfterAssignmentLoss(paused, err)
+	}
 
 	if paused {
-		if resumeErr := w.consumer.Resume(); resumeErr != nil {
-			commitErr = errors.Join(
-				commitErr,
-				fmt.Errorf("resume Kafka Consumer: %w", resumeErr),
-			)
+		if err := w.consumer.Resume(); err != nil {
+			return fmt.Errorf("resume Kafka Consumer: %w", err)
 		}
-	}
-
-	if commitErr != nil {
-		return fmt.Errorf(
-			"commit offset for Activity event %s after %d attempts: %w",
-			event.EventID,
-			attempts,
-			commitErr,
-		)
 	}
 
 	w.logger.Info(
@@ -247,6 +267,7 @@ func (w *Worker) moveToDLQ(
 
 	attempts, paused, err := w.retry(
 		ctx,
+		message,
 		func() error {
 			return w.producer.Publish(
 				ctx,
@@ -261,27 +282,24 @@ func (w *Worker) moveToDLQ(
 		"publish DLQ record",
 	)
 	if err != nil {
-		return err
+		return w.resumeAfterAssignmentLoss(paused, err)
 	}
 
-	// Source offset is committed only after a successful DLQ Delivery Report.
-	commitErr := w.consumer.CommitMessage(message)
+	// Commit the source offset only after the DLQ Delivery Report succeeds.
+	paused, err = w.commitWithRetry(
+		ctx,
+		message,
+		pending,
+		paused,
+	)
+	if err != nil {
+		return w.resumeAfterAssignmentLoss(paused, err)
+	}
 
 	if paused {
-		if resumeErr := w.consumer.Resume(); resumeErr != nil {
-			commitErr = errors.Join(
-				commitErr,
-				fmt.Errorf("resume Kafka Consumer: %w", resumeErr),
-			)
+		if err := w.consumer.Resume(); err != nil {
+			return fmt.Errorf("resume Kafka Consumer: %w", err)
 		}
-	}
-
-	if commitErr != nil {
-		return fmt.Errorf(
-			"commit source offset after DLQ delivery (%d attempts): %w",
-			attempts,
-			commitErr,
-		)
 	}
 
 	w.logger.Error(
@@ -299,10 +317,15 @@ func (w *Worker) moveToDLQ(
 
 func (w *Worker) retry(
 	ctx context.Context,
+	message *kafka_consumer.Message,
 	operation func() error,
 	pending *[]*kafka_consumer.Message,
 	operationName string,
 ) (int, bool, error) {
+	if !w.consumer.IsAssigned(message) {
+		return 0, false, kafka_consumer.ErrAssignmentLost
+	}
+
 	attempt := 1
 
 	if err := operation(); err == nil {
@@ -317,6 +340,10 @@ func (w *Worker) retry(
 	}
 
 	if err := w.consumer.Pause(); err != nil {
+		if !w.consumer.IsAssigned(message) {
+			return attempt, false, kafka_consumer.ErrAssignmentLost
+		}
+
 		return attempt, false, fmt.Errorf(
 			"pause Kafka Consumer before retry: %w",
 			err,
@@ -330,8 +357,17 @@ func (w *Worker) retry(
 			attempt,
 		)
 
-		if err := w.waitBackoff(ctx, delay, pending); err != nil {
+		if err := w.waitBackoff(
+			ctx,
+			message,
+			delay,
+			pending,
+		); err != nil {
 			return attempt, true, err
+		}
+
+		if !w.consumer.IsAssigned(message) {
+			return attempt, true, kafka_consumer.ErrAssignmentLost
 		}
 
 		attempt++
@@ -341,11 +377,14 @@ func (w *Worker) retry(
 				"Activity Worker retry failed",
 				zap.String("operation", operationName),
 				zap.Int("attempt", attempt),
-				zap.Duration("next_delay", retryDelay(
-					w.retryBaseDelay,
-					w.retryMaxDelay,
-					attempt,
-				)),
+				zap.Duration(
+					"next_delay",
+					retryDelay(
+						w.retryBaseDelay,
+						w.retryMaxDelay,
+						attempt,
+					),
+				),
 				zap.Error(err),
 			)
 
@@ -358,6 +397,7 @@ func (w *Worker) retry(
 
 func (w *Worker) waitBackoff(
 	ctx context.Context,
+	currentMessage *kafka_consumer.Message,
 	delay time.Duration,
 	pending *[]*kafka_consumer.Message,
 ) error {
@@ -365,12 +405,11 @@ func (w *Worker) waitBackoff(
 	defer timer.Stop()
 
 	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
-		// Continue polling while the current partition assignment is paused.
-		// This keeps the Consumer Group alive and drains already fetched data.
+		// Keep polling while the current assignment is paused.
 		result := w.consumer.Poll(pollTimeout)
 
 		if result.Err != nil {
@@ -388,17 +427,123 @@ func (w *Worker) waitBackoff(
 		}
 
 		if result.Message != nil {
+			if len(*pending) >= w.maxPendingMessages {
+				return fmt.Errorf(
+					"%w: limit=%d",
+					ErrPendingQueueFull,
+					w.maxPendingMessages,
+				)
+			}
+
 			*pending = append(*pending, result.Message)
+		}
+
+		if !w.consumer.IsAssigned(currentMessage) {
+			return kafka_consumer.ErrAssignmentLost
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+
 		case <-timer.C:
 			return nil
+
 		default:
 		}
 	}
+}
+
+func (w *Worker) commitWithRetry(
+	ctx context.Context,
+	message *kafka_consumer.Message,
+	pending *[]*kafka_consumer.Message,
+	paused bool,
+) (bool, error) {
+	attempt := 1
+
+	for {
+		if !w.consumer.IsAssigned(message) {
+			return paused, kafka_consumer.ErrAssignmentLost
+		}
+
+		err := w.consumer.CommitMessage(message)
+		if err == nil {
+			return paused, nil
+		}
+
+		if errors.Is(err, kafka_consumer.ErrAssignmentLost) ||
+			!w.consumer.IsAssigned(message) {
+			return paused, kafka_consumer.ErrAssignmentLost
+		}
+
+		if !kafka_consumer.IsRetriableError(err) {
+			return paused, fmt.Errorf("commit Kafka offset: %w", err)
+		}
+
+		if !paused {
+			if err := w.consumer.Pause(); err != nil {
+				if !w.consumer.IsAssigned(message) {
+					return paused, kafka_consumer.ErrAssignmentLost
+				}
+
+				return paused, fmt.Errorf(
+					"pause Kafka Consumer before commit retry: %w",
+					err,
+				)
+			}
+
+			paused = true
+		}
+
+		delay := retryDelay(
+			w.retryBaseDelay,
+			w.retryMaxDelay,
+			attempt,
+		)
+
+		w.logger.Warn(
+			"Kafka offset commit failed; retrying",
+			zap.String("topic", message.Topic),
+			zap.Int32("partition", message.Partition),
+			zap.Int64("offset", message.Offset),
+			zap.Int("attempt", attempt),
+			zap.Duration("retry_delay", delay),
+			zap.Error(err),
+		)
+
+		if err := w.waitBackoff(
+			ctx,
+			message,
+			delay,
+			pending,
+		); err != nil {
+			return paused, err
+		}
+
+		attempt++
+	}
+}
+
+func (w *Worker) resumeAfterAssignmentLoss(
+	paused bool,
+	cause error,
+) error {
+	if !paused || !errors.Is(
+		cause,
+		kafka_consumer.ErrAssignmentLost,
+	) {
+		return cause
+	}
+
+	if err := w.consumer.Resume(); err != nil {
+		return fmt.Errorf(
+			"resume Kafka Consumer after assignment loss: %w",
+			err,
+		)
+	}
+
+	return cause
 }
 
 func retryDelay(

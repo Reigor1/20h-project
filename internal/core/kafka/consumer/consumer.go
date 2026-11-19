@@ -9,12 +9,21 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
+var ErrAssignmentLost = errors.New("Kafka partition assignment lost")
+
+type partitionKey struct {
+	topic     string
+	partition int32
+}
+
 type Message struct {
 	Value     []byte
 	Key       []byte
 	Topic     string
 	Partition int32
 	Offset    int64
+
+	assignmentEpoch uint64
 
 	native *kafka.Message
 }
@@ -28,7 +37,11 @@ type PollResult struct {
 type Consumer struct {
 	client *kafka.Consumer
 
-	pausedPartitions []kafka.TopicPartition
+	assigned        map[partitionKey]struct{}
+	assignmentEpoch map[partitionKey]uint64
+
+	paused       bool
+	rebalanceErr error
 }
 
 func NewConsumer(config Config) (*Consumer, error) {
@@ -45,17 +58,14 @@ func NewConsumer(config Config) (*Consumer, error) {
 		"enable.auto.commit":       false,
 		"enable.auto.offset.store": false,
 
-		// Used when the group has no committed offset.
 		"auto.offset.reset": config.AutoOffsetReset,
 
-		// Connection recovery: initial and maximum reconnect backoff.
+		// librdkafka reconnect policy.
 		"reconnect.backoff.ms":     1000,
 		"reconnect.backoff.max.ms": 10000,
+		"socket.keepalive.enable":  true,
 
-		// Enable TCP keepalive for broker connections.
-		"socket.keepalive.enable": true,
-
-		// Maximum allowed interval between consecutive Poll() calls.
+		// Worker continues polling during retry backoff.
 		"max.poll.interval.ms": 300000,
 	})
 	if err != nil {
@@ -63,7 +73,9 @@ func NewConsumer(config Config) (*Consumer, error) {
 	}
 
 	return &Consumer{
-		client: client,
+		client:          client,
+		assigned:        make(map[partitionKey]struct{}),
+		assignmentEpoch: make(map[partitionKey]uint64),
 	}, nil
 }
 
@@ -72,15 +84,116 @@ func (c *Consumer) Subscribe(topic string) error {
 		return fmt.Errorf("Kafka topic must not be empty")
 	}
 
-	if err := c.client.SubscribeTopics([]string{topic}, nil); err != nil {
+	if err := c.client.SubscribeTopics([]string{topic}, c.handleRebalance); err != nil {
 		return fmt.Errorf("subscribe to Kafka topic %q: %w", topic, err)
 	}
 
 	return nil
 }
 
+func (c *Consumer) handleRebalance(
+	client *kafka.Consumer,
+	event kafka.Event,
+) error {
+	switch e := event.(type) {
+	case kafka.AssignedPartitions:
+		protocol := client.GetRebalanceProtocol()
+
+		var err error
+
+		if protocol == "COOPERATIVE" {
+			err = client.IncrementalAssign(e.Partitions)
+		} else {
+			err = client.Assign(e.Partitions)
+		}
+
+		if err != nil {
+			c.rebalanceErr = fmt.Errorf(
+				"assign Kafka partitions: %w",
+				err,
+			)
+			return c.rebalanceErr
+		}
+
+		if protocol != "COOPERATIVE" {
+			c.assigned = make(map[partitionKey]struct{})
+		}
+
+		for _, partition := range e.Partitions {
+			key := getPartitionKey(partition)
+
+			c.assigned[key] = struct{}{}
+
+			if _, exists := c.assignmentEpoch[key]; !exists {
+				c.assignmentEpoch[key] = 0
+			}
+		}
+
+		// Keep newly assigned partitions paused while retry is in progress.
+		if c.paused && len(e.Partitions) > 0 {
+			if err := client.Pause(e.Partitions); err != nil {
+				c.rebalanceErr = fmt.Errorf(
+					"pause newly assigned Kafka partitions: %w",
+					err,
+				)
+				return c.rebalanceErr
+			}
+		}
+
+	case kafka.RevokedPartitions:
+		protocol := client.GetRebalanceProtocol()
+		assignmentLost := client.AssignmentLost()
+
+		var err error
+
+		if assignmentLost || protocol != "COOPERATIVE" {
+			// Eager rebalance revokes the whole assignment.
+			// A lost assignment must also be treated as fully revoked.
+			for key := range c.assigned {
+				c.assignmentEpoch[key]++
+				delete(c.assigned, key)
+			}
+
+			err = client.Unassign()
+		} else {
+			// Cooperative rebalance revokes only the listed partitions.
+			for _, partition := range e.Partitions {
+				key := getPartitionKey(partition)
+
+				c.assignmentEpoch[key]++
+				delete(c.assigned, key)
+			}
+
+			err = client.IncrementalUnassign(e.Partitions)
+		}
+
+		if err != nil {
+			c.rebalanceErr = fmt.Errorf(
+				"unassign revoked Kafka partitions: %w",
+				err,
+			)
+			return c.rebalanceErr
+		}
+	}
+
+	return nil
+}
+
+func getPartitionKey(partition kafka.TopicPartition) partitionKey {
+	var topic string
+
+	if partition.Topic != nil {
+		topic = *partition.Topic
+	}
+
+	return partitionKey{
+		topic:     topic,
+		partition: partition.Partition,
+	}
+}
+
 func (c *Consumer) Pause() error {
-	if len(c.pausedPartitions) > 0 {
+	if c.paused {
 		return nil
 	}
 
@@ -90,38 +203,51 @@ func (c *Consumer) Pause() error {
 	}
 
 	if len(partitions) == 0 {
-		return fmt.Errorf("Kafka Consumer has no assigned partitions to pause")
+		return fmt.Errorf(
+			"Kafka Consumer has no assigned partitions to pause",
+		)
 	}
 
 	if err := c.client.Pause(partitions); err != nil {
 		return fmt.Errorf("pause Kafka Consumer: %w", err)
 	}
 
-	c.pausedPartitions = partitions
+	c.paused = true
 
 	return nil
 }
 
 func (c *Consumer) Resume() error {
-	if len(c.pausedPartitions) == 0 {
+	if !c.paused {
 		return nil
 	}
 
-	if err := c.client.Resume(c.pausedPartitions); err != nil {
-		return fmt.Errorf("resume Kafka Consumer: %w", err)
+	partitions, err := c.client.Assignment()
+	if err != nil {
+		return fmt.Errorf("get Kafka Consumer assignment: %w", err)
 	}
 
-	c.pausedPartitions = nil
+	if len(partitions) > 0 {
+		if err := c.client.Resume(partitions); err != nil {
+			return fmt.Errorf("resume Kafka Consumer: %w", err)
+		}
+	}
+
+	c.paused = false
 
 	return nil
 }
 
+// Assign manually assigns one partition at a specific offset.
+// It is used by the DLQ replay command.
 func (c *Consumer) Assign(
 	topic string,
 	partition int32,
 	offset int64,
 ) error {
-	if strings.TrimSpace(topic) == "" {
+	topic = strings.TrimSpace(topic)
+
+	if topic == "" {
 		return fmt.Errorf("Kafka topic must not be empty")
 	}
 
@@ -143,11 +269,36 @@ func (c *Consumer) Assign(
 		return fmt.Errorf("assign Kafka partition: %w", err)
 	}
 
+	c.assigned = make(map[partitionKey]struct{})
+
+	key := partitionKey{
+		topic:     topic,
+		partition: partition,
+	}
+
+	c.assigned[key] = struct{}{}
+
+	if _, exists := c.assignmentEpoch[key]; !exists {
+		c.assignmentEpoch[key] = 0
+	}
+
 	return nil
 }
 
 func (c *Consumer) Poll(timeout time.Duration) PollResult {
+	c.rebalanceErr = nil
+
 	event := c.client.Poll(int(timeout.Milliseconds()))
+
+	if c.rebalanceErr != nil {
+		err := c.rebalanceErr
+		c.rebalanceErr = nil
+
+		return PollResult{
+			Err:   err,
+			Fatal: true,
+		}
+	}
 
 	switch e := event.(type) {
 	case nil:
@@ -167,14 +318,21 @@ func (c *Consumer) Poll(timeout time.Duration) PollResult {
 			topic = *e.TopicPartition.Topic
 		}
 
+		key := partitionKey{
+			topic:     topic,
+			partition: e.TopicPartition.Partition,
+		}
+		epoch := c.assignmentEpoch[key]
+
 		return PollResult{
 			Message: &Message{
-				Key:       e.Key,
-				Value:     e.Value,
-				Topic:     topic,
-				Partition: e.TopicPartition.Partition,
-				Offset:    int64(e.TopicPartition.Offset),
-				native:    e,
+				Value:           e.Value,
+				Key:             e.Key,
+				Topic:           topic,
+				Partition:       e.TopicPartition.Partition,
+				Offset:          int64(e.TopicPartition.Offset),
+				assignmentEpoch: epoch,
+				native:          e,
 			},
 		}
 
@@ -190,10 +348,22 @@ func (c *Consumer) Poll(timeout time.Duration) PollResult {
 	}
 }
 
-func isFatalKafkaError(err error) bool {
-	var kafkaErr kafka.Error
+func (c *Consumer) IsAssigned(message *Message) bool {
+	if message == nil {
+		return false
+	}
 
-	return errors.As(err, &kafkaErr) && kafkaErr.IsFatal()
+	key := partitionKey{
+		topic:     message.Topic,
+		partition: message.Partition,
+	}
+
+	_, assigned := c.assigned[key]
+	if !assigned {
+		return false
+	}
+
+	return c.assignmentEpoch[key] == message.assignmentEpoch
 }
 
 func (c *Consumer) CommitMessage(message *Message) error {
@@ -201,8 +371,16 @@ func (c *Consumer) CommitMessage(message *Message) error {
 		return fmt.Errorf("Kafka message must not be nil")
 	}
 
+	if !c.IsAssigned(message) {
+		return ErrAssignmentLost
+	}
+
 	_, err := c.client.CommitMessage(message.native)
 	if err != nil {
+		if !c.IsAssigned(message) {
+			return fmt.Errorf("%w: %v", ErrAssignmentLost, err)
+		}
+
 		return fmt.Errorf("commit Kafka message offset: %w", err)
 	}
 
@@ -215,4 +393,41 @@ func (c *Consumer) Close() error {
 	}
 
 	return c.client.Close()
+}
+
+func isFatalKafkaError(err error) bool {
+	var kafkaErr kafka.Error
+
+	return errors.As(err, &kafkaErr) && kafkaErr.IsFatal()
+}
+
+func IsRetriableError(err error) bool {
+	var kafkaErr kafka.Error
+
+	if !errors.As(err, &kafkaErr) {
+		return false
+	}
+
+	if kafkaErr.IsFatal() {
+		return false
+	}
+
+	switch kafkaErr.Code() {
+	case kafka.ErrTransport,
+		kafka.ErrBrokerNotAvailable,
+		kafka.ErrLeaderNotAvailable,
+		kafka.ErrNotLeaderForPartition,
+		kafka.ErrRequestTimedOut,
+		kafka.ErrNetworkException,
+		kafka.ErrCoordinatorLoadInProgress,
+		kafka.ErrCoordinatorNotAvailable,
+		kafka.ErrNotCoordinator,
+		kafka.ErrRebalanceInProgress,
+		kafka.ErrIllegalGeneration,
+		kafka.ErrUnknownMemberID:
+		return true
+
+	default:
+		return false
+	}
 }
