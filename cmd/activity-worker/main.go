@@ -123,6 +123,7 @@ func run() (runErr error) {
 		kafkaConfig.DLQTopic,
 		kafkaConfig.RetryBaseDelay,
 		kafkaConfig.RetryMaxDelay,
+		kafkaConfig.ShutdownTimeout,
 		kafkaConfig.MaxPendingMessages,
 		kafkaClient,
 		kafkaProducer,
