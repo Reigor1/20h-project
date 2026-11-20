@@ -167,7 +167,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
+        - KAFKA_OPTS= /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
       interval: 10s
       timeout: 10s
       retries: 12
@@ -226,7 +226,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
+        - KAFKA_OPTS= /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
       interval: 10s
       timeout: 10s
       retries: 12
@@ -285,7 +285,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
+        - KAFKA_OPTS= /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
       interval: 10s
       timeout: 10s
       retries: 12

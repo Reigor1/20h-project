@@ -130,11 +130,11 @@ kafka-status:
 KAFKA_BOOTSTRAP_SERVER ?= kafka-1:19092
 KAFKA_CLI_SERVICE ?= kafka-1
 
-KAFKA_TOPICS_CLI = docker compose exec -T $(KAFKA_CLI_SERVICE) \
+KAFKA_TOPICS_CLI = MSYS_NO_PATHCONV=1 docker compose exec -T -e KAFKA_OPTS= $(KAFKA_CLI_SERVICE) \
 	/opt/kafka/bin/kafka-topics.sh \
 	--bootstrap-server $(KAFKA_BOOTSTRAP_SERVER)
 
-KAFKA_CONFIGS_CLI = docker compose exec -T $(KAFKA_CLI_SERVICE) \
+KAFKA_CONFIGS_CLI = MSYS_NO_PATHCONV=1 docker compose exec -T -e KAFKA_OPTS= $(KAFKA_CLI_SERVICE) \
 	/opt/kafka/bin/kafka-configs.sh \
 	--bootstrap-server $(KAFKA_BOOTSTRAP_SERVER)
 
