@@ -344,9 +344,6 @@ func (w *Worker) processMessageWithStop(
 		func() error {
 			var recordErr error
 			inserted, recordErr = w.service.Record(ctx, event)
-			if recordErr != nil && w.metrics != nil {
-				w.metrics.RecordActivityFailed(ctx, string(event.EventType))
-			}
 			return recordErr
 		},
 		pending,

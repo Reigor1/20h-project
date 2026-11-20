@@ -49,17 +49,35 @@ func TestKafkaMetricsRecordsApplicationMetrics(t *testing.T) {
 	got := make(map[string]bool)
 	for _, item := range data.ScopeMetrics[0].Metrics {
 		got[item.Name] = true
+		if item.Name == "outbox_pending_events" {
+			gauge, ok := item.Data.(metricdata.Gauge[int64])
+			if !ok {
+				t.Fatalf("outbox_pending_events data type = %T, want Gauge[int64]", item.Data)
+			}
+			if len(gauge.DataPoints) != 1 || gauge.DataPoints[0].Value != 7 {
+				t.Errorf("outbox_pending_events = %+v, want 7", gauge.DataPoints)
+			}
+		}
+		if item.Name == "outbox_oldest_event_age" {
+			gauge, ok := item.Data.(metricdata.Gauge[float64])
+			if !ok {
+				t.Fatalf("outbox_oldest_event_age data type = %T, want Gauge[float64]", item.Data)
+			}
+			if len(gauge.DataPoints) != 1 || gauge.DataPoints[0].Value != 12.5 {
+				t.Errorf("outbox_oldest_event_age = %+v, want 12.5", gauge.DataPoints)
+			}
+		}
 	}
 	for _, name := range []string{
 		"outbox_pending_events",
-		"outbox_oldest_event_age_seconds",
-		"outbox_published_total",
-		"outbox_publish_errors_total",
-		"activity_events_processed_total",
-		"activity_events_failed_total",
-		"activity_events_duplicate_total",
-		"activity_dlq_messages_total",
-		"activity_processing_duration_seconds",
+		"outbox_oldest_event_age",
+		"outbox_published",
+		"outbox_publish_errors",
+		"activity_events_processed",
+		"activity_events_failed",
+		"activity_events_duplicate",
+		"activity_dlq_messages",
+		"activity_processing_duration",
 	} {
 		if !got[name] {
 			t.Errorf("metric %q was not collected", name)
