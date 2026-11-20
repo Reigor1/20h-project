@@ -216,10 +216,11 @@ func (w *Worker) Run(ctx context.Context) error {
 
 		if err != nil {
 			if ctx.Err() != nil {
+				fields := w.messageLogFields(message)
+				fields = append(fields, zap.Error(err))
 				w.logger.Warn(
 					"Activity Worker shutdown interrupted the current message; it will be redelivered",
-					w.messageLogFields(message)...,
-					zap.Error(err),
+					fields...,
 				)
 				return nil
 			}
@@ -504,12 +505,16 @@ func (w *Worker) retry(
 	if err := operation(); err == nil {
 		return attempt, false, nil
 	} else {
-		w.logger.Warn(
-			"Activity Worker operation failed; retrying",
+		fields := []zap.Field{
 			zap.String("operation", operationName),
 			zap.Int("attempt", attempt),
-			w.messageLogFields(message)...,
-			zap.Error(err),
+		}
+		fields = append(fields, w.messageLogFields(message)...)
+		fields = append(fields, zap.Error(err))
+
+		w.logger.Warn(
+			"Activity Worker operation failed; retrying",
+			fields...,
 		)
 	}
 
@@ -587,6 +592,11 @@ func (w *Worker) waitBackoff(
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 
+	// Poll at a bounded cadence while waiting. Poll(0) is non-blocking;
+	// the ticker keeps the loop from spinning when no events are available.
+	pollTicker := time.NewTicker(pollTimeout)
+	defer pollTicker.Stop()
+
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -595,8 +605,7 @@ func (w *Worker) waitBackoff(
 			return err
 		}
 
-		// Keep polling while the current assignment is paused.
-		result := w.consumer.Poll(pollTimeout)
+		result := w.consumer.Poll(0)
 
 		if err := stopCtx.Err(); err != nil {
 			return err
@@ -635,14 +644,11 @@ func (w *Worker) waitBackoff(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-
 		case <-stopCtx.Done():
 			return stopCtx.Err()
-
 		case <-timer.C:
 			return nil
-
-		default:
+		case <-pollTicker.C:
 		}
 	}
 }
@@ -699,15 +705,15 @@ func (w *Worker) commitWithRetry(
 			attempt,
 		)
 
-		w.logger.Warn(
-			"Kafka offset commit failed; retrying",
-			zap.String("topic", message.Topic),
-			zap.Int32("partition", message.Partition),
-			zap.Int64("offset", message.Offset),
+		fields := w.messageLogFields(message)
+		fields = append(fields,
 			zap.Int("attempt", attempt),
 			zap.Duration("retry_delay", delay),
-			w.messageLogFields(message)...,
 			zap.Error(err),
+		)
+		w.logger.Warn(
+			"Kafka offset commit failed; retrying",
+			fields...,
 		)
 
 		if err := w.waitBackoff(
