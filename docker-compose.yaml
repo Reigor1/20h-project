@@ -1,4 +1,3 @@
-
 services:
 
   # =====================================================
@@ -6,35 +5,311 @@ services:
   # =====================================================
 
   todoapp:
+    stop_grace_period: 90s
     build:
       context: ${PROJECT_ROOT}
       dockerfile: ${PROJECT_ROOT}/cmd/todoapp/Dockerfile
     container_name: todoapp
+
     environment:
-      - HTTP_ADDR=:5050
-      - HTTP_SHUTDOWN_TIMEOUT=${HTTP_SHUTDOWN_TIMEOUT}
-      - POSTGRES_HOST=todoapp-postgres
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_TIMEOUT=${POSTGRES_TIMEOUT}
-      - LOGGER_LEVEL=${LOGGER_LEVEL}
-      - TIME_ZONE=${TIME_ZONE}
-      - SERVICE_VERSION=${SERVICE_VERSION:-dev}
-      - DEPLOYMENT_ENVIRONMENT=${DEPLOYMENT_ENVIRONMENT:-development}
-      - LOGGER_FOLDER=/app/out/logs
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      # Application
+      HTTP_ADDR: ":5050"
+      HTTP_SHUTDOWN_TIMEOUT: "${HTTP_SHUTDOWN_TIMEOUT}"
+      OUTBOX_PUBLISHER_SHUTDOWN_TIMEOUT: "${OUTBOX_PUBLISHER_SHUTDOWN_TIMEOUT:-30s}"
+      TIME_ZONE: "${TIME_ZONE}"
+      # PostgreSQL
+      POSTGRES_HOST: todoapp-postgres
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_TIMEOUT: "${POSTGRES_TIMEOUT}"
+      # Redis
+      REDIS_ADDR: redis:6379
+      REDIS_USERNAME: "${REDIS_USERNAME:-default}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_DB: "${REDIS_DB:-0}"
+      REDIS_TIMEOUT: "${REDIS_TIMEOUT:-5s}"
+      # Logging
+      LOGGER_LEVEL: "${LOGGER_LEVEL}"
+      LOGGER_FOLDER: /app/out/logs
+      # Deployment
+      SERVICE_VERSION: "${SERVICE_VERSION:-dev}"
+      DEPLOYMENT_ENVIRONMENT: "${DEPLOYMENT_ENVIRONMENT:-development}"
+      # OpenTelemetry
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+
     volumes:
       - ${PROJECT_ROOT}/out/logs:/app/out/logs
+
     ports:
       - "5050:5050"
+
     depends_on:
       todoapp-postgres:
         condition: service_healthy
       otel-collector:
         condition: service_started
-    stop_grace_period: 1m
+
     restart: always
+
+
+  # =====================================================
+  # Activity Worker
+  # =====================================================
+
+  activity-worker:
+    stop_grace_period: 75s
+    build:
+      context: ${PROJECT_ROOT}
+      dockerfile: ${PROJECT_ROOT}/cmd/activity-worker/Dockerfile
+
+    environment:
+      # Application
+      TIME_ZONE: "${TIME_ZONE}"
+
+      # PostgreSQL
+      POSTGRES_HOST: todoapp-postgres
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_TIMEOUT: "${POSTGRES_TIMEOUT}"
+
+      # Logging
+      LOGGER_LEVEL: "${LOGGER_LEVEL}"
+      LOGGER_FOLDER: /app/out/logs
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+      KAFKA_CONSUMER_GROUP_ID: "${KAFKA_CONSUMER_GROUP_ID}"
+      KAFKA_CONSUMER_CLIENT_ID: "${KAFKA_CONSUMER_CLIENT_ID}"
+      KAFKA_CONSUMER_TOPIC: "${KAFKA_CONSUMER_TOPIC}"
+      KAFKA_CONSUMER_AUTO_OFFSET_RESET: "${KAFKA_CONSUMER_AUTO_OFFSET_RESET}"
+      KAFKA_CONSUMER_DLQ_TOPIC: "${KAFKA_CONSUMER_DLQ_TOPIC}"
+      KAFKA_CONSUMER_RETRY_BASE_DELAY: "${KAFKA_CONSUMER_RETRY_BASE_DELAY}"
+      KAFKA_CONSUMER_RETRY_MAX_DELAY: "${KAFKA_CONSUMER_RETRY_MAX_DELAY}"
+      KAFKA_CONSUMER_MAX_PENDING_MESSAGES: "${KAFKA_CONSUMER_MAX_PENDING_MESSAGES:-1000}"
+      KAFKA_CONSUMER_SHUTDOWN_TIMEOUT: "${KAFKA_CONSUMER_SHUTDOWN_TIMEOUT:-30s}"
+
+      # OpenTelemetry
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      SERVICE_VERSION: "${SERVICE_VERSION:-dev}"
+      DEPLOYMENT_ENVIRONMENT: "${DEPLOYMENT_ENVIRONMENT:-development}"
+
+    volumes:
+      - ${PROJECT_ROOT}/out/logs:/app/out/logs
+
+    depends_on:
+      todoapp-postgres:
+        condition: service_healthy
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+
+  # =====================================================
+  # Kafka Cluster
+  # =====================================================
+
+  kafka-1:
+    build:
+      context: ${PROJECT_ROOT}/monitoring/kafka
+      dockerfile: Dockerfile
+      args:
+        KAFKA_IMAGE: apache/kafka:4.4.0
+    hostname: kafka-1
+    container_name: todoapp-kafka-1
+    environment:
+      # KRaft
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID must be set}
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+
+      # Listeners
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,PLAINTEXT_HOST://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:19092,PLAINTEXT_HOST://127.0.0.1:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Replication
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+
+      # Topics
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      # Storage
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # Local development
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+      KAFKA_OPTS: "-javaagent:/opt/kafka/libs/jmx_prometheus_javaagent.jar=9404:/opt/kafka/config/jmx-exporter.yml"
+
+    ports:
+      - "127.0.0.1:29092:9092"
+
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - KAFKA_OPTS= /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+
+    restart: unless-stopped
+
+
+  kafka-2:
+    build:
+      context: ${PROJECT_ROOT}/monitoring/kafka
+      dockerfile: Dockerfile
+      args:
+        KAFKA_IMAGE: apache/kafka:4.4.0
+    hostname: kafka-2
+    container_name: todoapp-kafka-2
+    environment:
+      # KRaft
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID must be set}
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+
+      # Listeners
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,PLAINTEXT_HOST://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:19092,PLAINTEXT_HOST://127.0.0.1:39092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Replication
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+
+      # Topics
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      # Storage
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # Local development
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+      KAFKA_OPTS: "-javaagent:/opt/kafka/libs/jmx_prometheus_javaagent.jar=9404:/opt/kafka/config/jmx-exporter.yml"
+
+    ports:
+      - "127.0.0.1:39092:9092"
+
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - KAFKA_OPTS= /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+
+    restart: unless-stopped
+
+
+  kafka-3:
+    build:
+      context: ${PROJECT_ROOT}/monitoring/kafka
+      dockerfile: Dockerfile
+      args:
+        KAFKA_IMAGE: apache/kafka:4.4.0
+    hostname: kafka-3
+    container_name: todoapp-kafka-3
+    environment:
+      # KRaft
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID must be set}
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+
+      # Listeners
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,PLAINTEXT_HOST://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:19092,PLAINTEXT_HOST://127.0.0.1:49092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Replication
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+
+      # Topics
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      # Storage
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # Local development
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+      KAFKA_OPTS: "-javaagent:/opt/kafka/libs/jmx_prometheus_javaagent.jar=9404:/opt/kafka/config/jmx-exporter.yml"
+
+    ports:
+      - "127.0.0.1:49092:9092"
+
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - KAFKA_OPTS= /opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:19092 describe --status >/dev/null 2>&1
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+
+    restart: unless-stopped
+
+  # ----------------------------
+  # Kafka UI
+  # ----------------------------
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0
+    container_name: todoapp-kafka-ui
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    environment:
+      # Kafka Cluster
+      KAFKA_CLUSTERS_0_NAME: 20h-project
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092
+
+    restart: unless-stopped
 
 
   # =====================================================
@@ -181,6 +456,31 @@ services:
     depends_on:
       otel-collector:
         condition: service_started
+      kafka-exporter:
+        condition: service_started
+    restart: unless-stopped
+
+  # ----------------------------
+  # Kafka Metrics Exporter
+  # ----------------------------
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: todoapp-kafka-exporter
+    command:
+      - --kafka.server=kafka-1:19092
+      - --kafka.server=kafka-2:19092
+      - --kafka.server=kafka-3:19092
+      - --web.listen-address=:9308
+    ports:
+      - "127.0.0.1:9308:9308"
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
     restart: unless-stopped
 
   # ----------------------------
@@ -274,3 +574,16 @@ services:
       loki:
         condition: service_started
     restart: unless-stopped
+
+
+# =====================================================
+# Volumes for persistent storage
+# =====================================================
+volumes:
+  # Kafka
+  kafka-1-data:
+    driver: local
+  kafka-2-data:
+    driver: local
+  kafka-3-data:
+    driver: local

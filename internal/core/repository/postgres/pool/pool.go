@@ -5,13 +5,30 @@ import (
 	"time"
 )
 
-type Pool interface {
+type Executor interface {
 	Query(ctx context.Context, sql string, args ...any) (Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) Row
 	Exec(ctx context.Context, sql string, arguments ...any) (CommandTag, error)
-	Close()
+}
 
+type Pool interface {
+	Executor
+
+	Close()
 	OpTimeout() time.Duration
+}
+
+type Transaction interface {
+	Executor
+
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+type TransactionalPool interface {
+	Pool
+
+	Begin(ctx context.Context) (Transaction, error)
 }
 
 type Rows interface {

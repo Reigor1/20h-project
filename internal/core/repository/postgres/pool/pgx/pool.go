@@ -88,6 +88,17 @@ func (p *Pool) Exec(
 	return pgxCommandTag{tag}, nil
 }
 
+func (p *Pool) Begin(
+	ctx context.Context,
+) (core_postgres_pool.Transaction, error) {
+	tx, err := p.Pool.Begin(ctx)
+	if err != nil {
+		return nil, mapErrors(err)
+	}
+
+	return pgxTransaction{tx: tx}, nil
+}
+
 func (p *Pool) OpTimeout() time.Duration {
 	return p.opTimeout
 }

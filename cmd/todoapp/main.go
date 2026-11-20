@@ -11,6 +11,7 @@ import (
 	"time"
 
 	core_config "github.com/Reigor1/20h-project/internal/core/config"
+	kafka_producer "github.com/Reigor1/20h-project/internal/core/kafka/producer"
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 	core_observability_postgres "github.com/Reigor1/20h-project/internal/core/observability/postgres"
@@ -19,6 +20,11 @@ import (
 	core_redis_v9 "github.com/Reigor1/20h-project/internal/core/repository/redis/redis_v9"
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
+	activity_postgres_repository "github.com/Reigor1/20h-project/internal/features/activity/repository/postgres"
+	activity_service "github.com/Reigor1/20h-project/internal/features/activity/service"
+	activity_transport_http "github.com/Reigor1/20h-project/internal/features/activity/transport/http"
+	outbox_publisher "github.com/Reigor1/20h-project/internal/features/outbox/publisher"
+	outbox_postgres_repository "github.com/Reigor1/20h-project/internal/features/outbox/repository"
 	statistics_redis_cache "github.com/Reigor1/20h-project/internal/features/statistics/cache/redis"
 	statistics_postgres_repository "github.com/Reigor1/20h-project/internal/features/statistics/repository/postgres"
 	statistics_service "github.com/Reigor1/20h-project/internal/features/statistics/service"
@@ -29,6 +35,7 @@ import (
 	users_postgres_repository "github.com/Reigor1/20h-project/internal/features/users/repository/postgres"
 	users_service "github.com/Reigor1/20h-project/internal/features/users/service"
 	users_transport_http "github.com/Reigor1/20h-project/internal/features/users/transport/http"
+
 	"go.uber.org/zap"
 
 	_ "github.com/Reigor1/20h-project/docs"
@@ -94,17 +101,55 @@ func run() (runErr error) {
 	// Shutdown it before closing the pool so the final metric collection
 	// can still read pgxpool.Stat().
 	var (
-		pool  *core_pgx_pool.Pool
-		cache core_redis.Cache
+		pool          *core_pgx_pool.Pool
+		cache         core_redis.Cache
+		kafkaProducer *kafka_producer.Producer
+		publisherDone   chan error
+		publisherCancel context.CancelFunc
+		publisherConfig outbox_publisher.Config
 	)
 
 	defer func() {
 		// Stop application work before shutting down its dependencies.
 		cancel()
 
+		if publisherCancel != nil {
+			publisherCancel()
+		}
+
+		if publisherDone != nil {
+			select {
+			case err := <-publisherDone:
+				if err != nil {
+					logger.Error(
+						"Outbox Publisher stopped with error",
+						zap.Error(err),
+					)
+				}
+			case <-time.After(publisherConfig.ShutdownTimeout + time.Second):
+				logger.Error("Outbox Publisher shutdown timed out; active lease will expire")
+				runErr = errors.Join(runErr, fmt.Errorf("Outbox Publisher shutdown timed out"))
+			}
+		}
+
+		if kafkaProducer != nil {
+			if err := kafkaProducer.Close(10 * time.Second); err != nil {
+				logger.Warn(
+					"Kafka Producer shutdown failed",
+					zap.Error(err),
+				)
+
+				runErr = errors.Join(
+					runErr,
+					fmt.Errorf("close Kafka Producer: %w", err),
+				)
+			}
+		}
+
 		if cache != nil {
 			if err := cache.Close(); err != nil {
 				logger.Warn("Redis shutdown failed", zap.Error(err))
+
 				runErr = errors.Join(
 					runErr,
 					fmt.Errorf("close Redis cache: %w", err),
@@ -120,6 +165,7 @@ func run() (runErr error) {
 
 		if err := observability.Shutdown(shutdownCtx); err != nil {
 			logger.Error("OpenTelemetry shutdown failed", zap.Error(err))
+
 			runErr = errors.Join(
 				runErr,
 				fmt.Errorf("shutdown observability: %w", err),
@@ -199,12 +245,98 @@ func run() (runErr error) {
 
 	logger.Debug("initializing feature", zap.String("feature", "tasks"))
 
-	tasksRepository := tasks_postgres_repository.NewTasksRepository(pool)
+	kafkaConfig, err := kafka_producer.NewConfig()
+	if err != nil {
+		return fmt.Errorf("load Kafka Producer config: %w", err)
+	}
+
+	publisherConfig, err = outbox_publisher.NewConfig()
+	if err != nil {
+		return fmt.Errorf("load Outbox Publisher config: %w", err)
+	}
+
+	// Lease must outlive the maximum Kafka delivery timeout
+	// plus bounded PostgreSQL operations and a safety margin.
+	minimumLease := kafkaConfig.MessageTimeout +
+		pool.OpTimeout() +
+		15*time.Second
+
+	if publisherConfig.LeaseDuration <= minimumLease {
+		return fmt.Errorf(
+			"Outbox lease duration %s must exceed %s",
+			publisherConfig.LeaseDuration,
+			minimumLease,
+		)
+	}
+
+	kafkaProducer, err = kafka_producer.NewProducer(
+		kafkaConfig,
+		func(kafkaError error) {
+			logger.Warn(
+				"Kafka Producer event",
+				zap.Error(kafkaError),
+			)
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Kafka Producer: %w", err)
+	}
+
+	outboxRepository := outbox_postgres_repository.NewOutboxRepository(pool)
+
+	kafkaMetrics, err := core_observability.NewKafkaMetrics(
+		observability.MeterProvider(),
+		outboxRepository,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Kafka observability: %w", err)
+	}
+
+	tasksRepository := tasks_postgres_repository.NewTasksRepository(
+		pool,
+		outboxRepository,
+	)
 	tasksService := tasks_service.NewTasksService(
 		tasksRepository,
 		observability.TracerProvider(),
 	)
 	tasksTransportHTTP := tasks_transport_http.NewTasksHTTPHandler(tasksService)
+
+	logger.Debug("initializing feature", zap.String("feature", "activity"))
+
+	activityRepository := activity_postgres_repository.NewActivityRepository(pool)
+
+	activityService := activity_service.NewActivityService(
+		activityRepository,
+	)
+
+	activityTransportHTTP := activity_transport_http.NewActivityHTTPHandler(
+		activityService,
+	)
+
+	publisher, err := outbox_publisher.NewPublisher(
+		publisherConfig,
+		outboxRepository,
+		kafkaProducer,
+		logger.Logger,
+		outbox_publisher.Instrumentation{
+			Metrics: kafkaMetrics,
+			Tracer: observability.TracerProvider().Tracer(
+				"github.com/Reigor1/20h-project/internal/features/outbox/publisher",
+			),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("initialize Outbox Publisher: %w", err)
+	}
+
+	publisherDone = make(chan error, 1)
+	publisherCtx, stopPublisher := context.WithCancel(context.Background())
+	publisherCancel = stopPublisher
+
+	go func() {
+		publisherDone <- publisher.Run(publisherCtx)
+	}()
 
 	logger.Debug("initializing feature", zap.String("feature", "statistics"))
 
@@ -255,6 +387,7 @@ func run() (runErr error) {
 
 	apiVersionRouter1.RegisterRouts(usersTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(tasksTransportHTTP.Routes()...)
+	apiVersionRouter1.RegisterRouts(activityTransportHTTP.Routes()...)
 	apiVersionRouter1.RegisterRouts(statisticsTransportHTTP.Routes()...)
 
 	// Example of usage apiVersionRouter2 with dummy middleware.
@@ -276,6 +409,11 @@ func run() (runErr error) {
 		zap.String("prometheus_url", "http://localhost:9090/graph"),
 		zap.String("grafana_url", "http://localhost:3000"),
 		zap.String("swagger_url", "http://127.0.0.1:5050/swagger/index.html"),
+	)
+
+	logger.Info(
+		"Kafka management UI",
+		zap.String("url", "http://127.0.0.1:8080"),
 	)
 
 	if err := httpServer.Run(ctx); err != nil {

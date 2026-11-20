@@ -67,10 +67,11 @@ func (r *tracingTasksRepository) DeleteTask(
 func (r *tracingTasksRepository) PatchTask(
 	ctx context.Context,
 	_ int,
-	task domain.Task,
+	_ domain.Task,
+	after domain.Task,
 ) (domain.Task, error) {
 	r.recordContext(ctx)
-	return task, nil
+	return after, nil
 }
 
 func TestTasksServiceMethodsCreateSpans(t *testing.T) {
@@ -125,10 +126,18 @@ func TestTasksServiceMethodsCreateSpans(t *testing.T) {
 		t.Fatalf("GetTask() error = %v, want nil", err)
 	}
 
+	updatedTitle := "Updated report"
+
+	patch := domain.NewTaskPatch(
+		domain.Nullable[string]{Value: &updatedTitle, Set: true},
+		domain.Nullable[string]{},
+		domain.Nullable[bool]{},
+	)
+
 	if _, err := service.PathTask(
 		requestCtx,
 		repository.task.ID,
-		domain.TaskPatch{},
+		patch,
 	); err != nil {
 		t.Fatalf("PathTask() error = %v, want nil", err)
 	}

@@ -45,7 +45,8 @@ type tasksRepositoryStub struct {
 	patchTaskError  error
 	patchTaskCalls  int
 	patchTaskID     int
-	patchedTask     domain.Task
+	patchTaskBefore domain.Task
+	patchTaskAfter  domain.Task
 
 	calls []string
 }
@@ -122,7 +123,8 @@ func (r *tasksRepositoryStub) DeleteTask(
 func (r *tasksRepositoryStub) PatchTask(
 	_ context.Context,
 	id int,
-	task domain.Task,
+	before domain.Task,
+	after domain.Task,
 ) (domain.Task, error) {
 	if !r.expectPatchTask {
 		r.t.Fatal("unexpected TasksRepository.PatchTask call")
@@ -130,7 +132,8 @@ func (r *tasksRepositoryStub) PatchTask(
 
 	r.patchTaskCalls++
 	r.patchTaskID = id
-	r.patchedTask = task
+	r.patchTaskBefore = before
+	r.patchTaskAfter = after
 	r.calls = append(r.calls, "PatchTask")
 
 	return r.patchTaskResult, r.patchTaskError
@@ -439,18 +442,19 @@ func TestPathTaskAppliesPatchBeforeRepositoryUpdate(t *testing.T) {
 	if repository.patchTaskCalls != 1 || repository.patchTaskID != 42 {
 		t.Fatalf("repository PatchTask() calls/id = %d/%d, want 1/42", repository.patchTaskCalls, repository.patchTaskID)
 	}
-	if !reflect.DeepEqual(repository.patchedTask, updatedTask) {
-		t.Fatalf("repository PatchTask() task = %+v, want %+v", repository.patchedTask, updatedTask)
+	if !reflect.DeepEqual(repository.patchTaskBefore, initialTask) {
+		t.Fatalf("repository PatchTask() before = %+v, want %+v", repository.patchTaskBefore, initialTask)
+	}
+	if !reflect.DeepEqual(repository.patchTaskAfter, updatedTask) {
+		t.Fatalf("repository PatchTask() after = %+v, want %+v", repository.patchTaskAfter, updatedTask)
 	}
 }
 
-func TestPathTaskPassesUnchangedTaskForEmptyPatch(t *testing.T) {
+func TestPathTaskDoesNotCallPatchTaskForEmptyPatch(t *testing.T) {
 	initialTask := sampleTask()
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTask = true
 	repository.getTaskResult = initialTask
-	repository.expectPatchTask = true
-	repository.patchTaskResult = initialTask
 	service := newTasksServiceForTest(repository)
 
 	got, err := service.PathTask(context.Background(), initialTask.ID, domain.TaskPatch{})
@@ -460,11 +464,11 @@ func TestPathTaskPassesUnchangedTaskForEmptyPatch(t *testing.T) {
 	if !reflect.DeepEqual(got, initialTask) {
 		t.Fatalf("PathTask() = %+v, want unchanged task %+v", got, initialTask)
 	}
-	if !reflect.DeepEqual(repository.calls, []string{"GetTask", "PatchTask"}) {
-		t.Fatalf("repository calls = %v, want [GetTask PatchTask]", repository.calls)
+	if !reflect.DeepEqual(repository.calls, []string{"GetTask"}) {
+		t.Fatalf("repository calls = %v, want [GetTask]", repository.calls)
 	}
-	if !reflect.DeepEqual(repository.patchedTask, initialTask) {
-		t.Fatalf("repository PatchTask() task = %+v, want %+v", repository.patchedTask, initialTask)
+	if repository.patchTaskCalls != 0 {
+		t.Fatalf("repository PatchTask() calls = %d, want 0 for empty patch", repository.patchTaskCalls)
 	}
 }
 
@@ -489,7 +493,11 @@ func TestPathTaskCompletesTaskAndPreservesUnchangedFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PathTask() error = %v, want nil", err)
 	}
-	updatedTask := repository.patchedTask
+	if !reflect.DeepEqual(repository.patchTaskBefore, initialTask) {
+		t.Fatalf("repository PatchTask() before = %+v, want %+v", repository.patchTaskBefore, initialTask)
+	}
+
+	updatedTask := repository.patchTaskAfter
 	if updatedTask.ID != initialTask.ID ||
 		updatedTask.Version != initialTask.Version ||
 		updatedTask.Title != title ||
@@ -500,7 +508,7 @@ func TestPathTaskCompletesTaskAndPreservesUnchangedFields(t *testing.T) {
 		updatedTask.CompletedAt.Before(createdAt) ||
 		!updatedTask.CreatedAt.Equal(createdAt) ||
 		updatedTask.AuthorUserID != initialTask.AuthorUserID {
-		t.Fatalf("repository PatchTask() task = %+v, want requested changes and preserved fields", updatedTask)
+		t.Fatalf("repository PatchTask() after = %+v, want requested changes and preserved fields", updatedTask)
 	}
 	if !reflect.DeepEqual(repository.calls, []string{"GetTask", "PatchTask"}) {
 		t.Fatalf("repository calls = %v, want [GetTask PatchTask]", repository.calls)
@@ -581,8 +589,11 @@ func TestPathTaskReturnsPatchRepositoryError(t *testing.T) {
 	}
 	wantUpdatedTask := initialTask
 	wantUpdatedTask.Title = title
-	if !reflect.DeepEqual(repository.patchedTask, wantUpdatedTask) {
-		t.Fatalf("repository PatchTask() task = %+v, want %+v", repository.patchedTask, wantUpdatedTask)
+	if !reflect.DeepEqual(repository.patchTaskBefore, initialTask) {
+		t.Fatalf("repository PatchTask() before = %+v, want %+v", repository.patchTaskBefore, initialTask)
+	}
+	if !reflect.DeepEqual(repository.patchTaskAfter, wantUpdatedTask) {
+		t.Fatalf("repository PatchTask() after = %+v, want %+v", repository.patchTaskAfter, wantUpdatedTask)
 	}
 }
 

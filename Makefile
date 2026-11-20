@@ -15,6 +15,10 @@ export PROJECT_ROOT := $(CURDIR)
 # Environment Management
 # =====================================================
 
+# ----------------------------
+# PostgreSQL
+# ----------------------------
+
 # Start the PostgreSQL development environment.
 env-postgres-up:
 	@docker compose up -d todoapp-postgres
@@ -94,20 +98,176 @@ migrate-action:
 
 
 # =====================================================
+# Kafka
+# =====================================================
+
+# -----------------------------------------------------
+# Kafka Cluster
+# -----------------------------------------------------
+
+# Start all three Kafka brokers and wait until they are healthy.
+kafka-up:
+	@docker compose up -d --wait --wait-timeout 180 kafka-1 kafka-2 kafka-3
+
+# Stop Kafka brokers without deleting their persistent volumes.
+kafka-down:
+	@docker compose stop kafka-1 kafka-2 kafka-3
+
+# Display broker status, KRaft quorum and broker API versions.
+kafka-status:
+	@docker compose ps kafka-1 kafka-2 kafka-3
+	@docker compose exec -T kafka-1 \
+		/opt/kafka/bin/kafka-metadata-quorum.sh \
+		--bootstrap-server kafka-1:19092 describe --status
+	@docker compose exec -T kafka-1 \
+		/opt/kafka/bin/kafka-cluster.sh \
+		api-versions --bootstrap-server kafka-1:19092
+
+# -----------------------------------------------------
+# Kafka Topics
+# -----------------------------------------------------
+
+KAFKA_BOOTSTRAP_SERVER ?= kafka-1:19092
+KAFKA_CLI_SERVICE ?= kafka-1
+
+KAFKA_TOPICS_CLI = MSYS_NO_PATHCONV=1 docker compose exec -T -e KAFKA_OPTS= $(KAFKA_CLI_SERVICE) \
+	/opt/kafka/bin/kafka-topics.sh \
+	--bootstrap-server $(KAFKA_BOOTSTRAP_SERVER)
+
+KAFKA_CONFIGS_CLI = MSYS_NO_PATHCONV=1 docker compose exec -T -e KAFKA_OPTS= $(KAFKA_CLI_SERVICE) \
+	/opt/kafka/bin/kafka-configs.sh \
+	--bootstrap-server $(KAFKA_BOOTSTRAP_SERVER)
+
+.PHONY: kafka-topics-create kafka-topics-configure kafka-topics-setup
+.PHONY: kafka-topics kafka-topics-describe kafka-topics-config
+
+# List all Kafka topics.
+kafka-topics:
+	@$(KAFKA_TOPICS_CLI) --list
+
+# Create the application event topics.
+# Existing topics are not recreated.
+kafka-topics-create:
+	@$(KAFKA_TOPICS_CLI) \
+		--create \
+		--if-not-exists \
+		--topic task-events \
+		--partitions 3 \
+		--replication-factor 3 \
+		--config cleanup.policy=delete \
+		--config retention.ms=604800000 \
+		--config min.insync.replicas=2 \
+		--config unclean.leader.election.enable=false
+
+	@$(KAFKA_TOPICS_CLI) \
+		--create \
+		--if-not-exists \
+		--topic task-events.dlq \
+		--partitions 3 \
+		--replication-factor 3 \
+		--config cleanup.policy=delete \
+		--config retention.ms=2592000000 \
+		--config min.insync.replicas=2 \
+		--config unclean.leader.election.enable=false
+
+# Apply the required configuration to existing topics.
+kafka-topics-configure:
+	@$(KAFKA_CONFIGS_CLI) \
+		--entity-type topics \
+		--entity-name task-events \
+		--alter \
+		--add-config cleanup.policy=delete,retention.ms=604800000,min.insync.replicas=2,unclean.leader.election.enable=false
+
+	@$(KAFKA_CONFIGS_CLI) \
+		--entity-type topics \
+		--entity-name task-events.dlq \
+		--alter \
+		--add-config cleanup.policy=delete,retention.ms=2592000000,min.insync.replicas=2,unclean.leader.election.enable=false
+
+# Create topics and enforce their configuration.
+kafka-topics-setup:
+	@$(MAKE) kafka-topics-create
+	@$(MAKE) kafka-topics-configure
+
+# Display partition, leader, replica and ISR information.
+kafka-topics-describe:
+	@$(KAFKA_TOPICS_CLI) --describe --topic task-events
+	@$(KAFKA_TOPICS_CLI) --describe --topic task-events.dlq
+
+# Display topic-level configuration.
+kafka-topics-config:
+	@$(KAFKA_CONFIGS_CLI) \
+		--entity-type topics \
+		--entity-name task-events \
+		--describe
+
+	@$(KAFKA_CONFIGS_CLI) \
+		--entity-type topics \
+		--entity-name task-events.dlq \
+		--describe
+
+# -----------------------------------------------------
+# Kafka UI
+# -----------------------------------------------------
+
+# Start the Kafka UI container.
+kafka-ui-up:
+	@docker compose up -d kafka-ui
+
+# Stop the Kafka UI container without affecting other services.
+kafka-ui-down:
+	@docker compose stop kafka-ui
+
+
+# =====================================================
 # Application
 # =====================================================
 
-# Run the application locally.
-# Configure the log directory and PostgreSQL connection before starting.
-todoapp-run:
+ACTIVITY_WORKER_REPLICAS ?= 3
+
+# -----------------------------------------------------
+# Local
+# -----------------------------------------------------
+
+# Start infrastructure and Activity Workers in Docker,
+# then run the application locally.
+todoapp-run-locally:
 	@export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
 	export POSTGRES_HOST=localhost && \
 	$(MAKE) env-redis-up && \
 	$(MAKE) env-postgres-up && \
 	$(MAKE) env-port-forward && \
 	$(MAKE) observability-up && \
+	$(MAKE) kafka-up && \
+	$(MAKE) kafka-topics-setup && \
+	$(MAKE) kafka-ui-up && \
 	go mod tidy && \
+	$(MAKE) activity-workers-up && \
 	go run ${PROJECT_ROOT}/cmd/todoapp/main.go
+
+# -----------------------------------------------------
+# Docker
+# -----------------------------------------------------
+
+# Start infrastructure in Docker and run the application in Docker.
+todoapp-run-in-docker:
+	@export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
+	export POSTGRES_HOST=localhost && \
+	$(MAKE) env-redis-up && \
+	$(MAKE) env-postgres-up && \
+	$(MAKE) env-port-forward && \
+	$(MAKE) observability-up && \
+	$(MAKE) kafka-up && \
+	$(MAKE) kafka-topics-setup && \
+	$(MAKE) kafka-ui-up && \
+	$(MAKE) activity-workers-up && \
+	go mod tidy && \
+	$(MAKE) activity-workers-up && \
+	$(MAKE) todoapp-deploy
+
+# -----------------------------------------------------
+# Todoapp
+# -----------------------------------------------------
 
 # Build the application Docker image and start the container.
 todoapp-deploy:
@@ -116,6 +276,36 @@ todoapp-deploy:
 # Stop the application container without removing it.
 todoapp-undeploy:
 	@docker compose down todoapp
+
+# -----------------------------------------------------
+# Activity Worker
+# -----------------------------------------------------
+
+# Start three Activity Worker instances in one Consumer Group.
+activity-workers-up:
+	@docker compose up -d --build \
+		--scale activity-worker=$(ACTIVITY_WORKER_REPLICAS) \
+		activity-worker
+
+# Stop all Activity Worker instances.
+activity-workers-down:
+	@docker compose stop activity-worker
+
+
+# -----------------------------------------------------
+# Activity DLQ Replay
+# -----------------------------------------------------
+
+# Replay one message from the Activity DLQ using its partition and offset.
+# Usage: make activity-dlq-replay DLQ_PARTITION=1 DLQ_OFFSET=125
+activity-dlq-replay:
+	@if [ -z "$(DLQ_PARTITION)" ] || [ -z "$(DLQ_OFFSET)" ]; then \
+		echo "Usage: make activity-dlq-replay DLQ_PARTITION=1 DLQ_OFFSET=125"; \
+		exit 1; \
+	fi
+	@go run ./cmd/activity-dlq-replay \
+		-partition "$(DLQ_PARTITION)" \
+		-offset "$(DLQ_OFFSET)"
 
 
 # =====================================================
@@ -136,6 +326,10 @@ swagger-gen:
 # Testing
 # =====================================================
 
+# -----------------------------------------------------
+# Integration Testing
+# -----------------------------------------------------
+
 # Run all integration test suites sequentially.
 tests-integration: 
 	@$(MAKE) test-integration-pgx
@@ -143,6 +337,7 @@ tests-integration:
 	@$(MAKE) test-integration-users-postgres
 	@$(MAKE) test-integration-tasks-postgres
 	@$(MAKE) test-integration-statistics-postgres
+	@$(MAKE) test-integration-events-migrations
 
 # Run PostgreSQL connection pool integration tests.
 # Start the test database, load test environment variables,
@@ -196,6 +391,21 @@ test-integration-statistics-postgres:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
 		exit $$test_status
 
+# Run event storage migration integration tests.
+# Apply the real migration sequence and verify unique event constraints.
+test-integration-events-migrations:
+	@docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml up -d --wait postgres-test
+	@set -a; . ${PROJECT_ROOT}/.env.test && set +a && \
+		go test -count=1 -v \
+			${PROJECT_ROOT}/tests/integration/features/events/migrations; \
+		test_status=$$?; \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml rm -sf postgres-test; \
+		exit $$test_status
+
+# -----------------------------------------------------
+# End-to-End Testing
+# -----------------------------------------------------
+
 # Run all API end-to-end test suites.
 tests-e2e:
 	@$(MAKE) test-e2e-api
@@ -209,6 +419,12 @@ test-e2e-api:
 		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml exec -T postgres-test \
 			sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
 			< "${PROJECT_ROOT}/migrations/000001_init.up.sql" && \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml exec -T postgres-test \
+			sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
+			< "${PROJECT_ROOT}/migrations/000002_create_outbox.up.sql" && \
+		docker compose -p todoapp-test --env-file .env.test -f docker-compose.test.yaml exec -T postgres-test \
+			sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
+			< "${PROJECT_ROOT}/migrations/000003_create_task_activity.up.sql" && \
 		export LOGGER_FOLDER=${PROJECT_ROOT}/out/logs && \
 		go test -count=1 -v -run \
 			'^TestApiE2E$$' \
@@ -222,7 +438,7 @@ test-e2e-api:
 # -----------------------------------------------------
 
 test-observability:
-	@go run ./tests/e2e/observability
+	@go run ${PROJECT_ROOT}/tests/e2e/observability
 
 # Run load-testing profiles against an already running application.
 # Usage: make test-load [PROFILE=standard|ramp-up|steady-state|stress|all]
@@ -236,7 +452,7 @@ USERS ?= 10
 TASKS_PER_USER ?= 2
 
 test-load:
-	@go run ./tests/e2e/observability \
+	@go run ${PROJECT_ROOT}/tests/e2e/observability \
 		-scenario=load \
 		-load-profile=$(PROFILE) \
 		-stage-duration=$(STAGE_DURATION) \
@@ -286,11 +502,11 @@ otel-collector-down:
 
 # Start Prometheus.
 prometheus-up:
-	@docker compose up -d prometheus
+	@docker compose up -d --wait prometheus kafka-exporter
 
 # Stop Prometheus.
 prometheus-down:
-	@docker compose stop prometheus
+	@docker compose stop prometheus kafka-exporter
 
 # Start Loki.
 loki-up:
@@ -323,7 +539,7 @@ grafana-down:
 
 # Display the status of all Docker Compose services.
 ps:
-	@docker compose ps
+	@ps
 
 # Remove all application log files.
 # Requires explicit user confirmation before deleting logs.

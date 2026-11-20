@@ -2,6 +2,7 @@ package repository_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,8 +11,10 @@ import (
 
 	"github.com/Reigor1/20h-project/internal/core/domain"
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
+	core_events "github.com/Reigor1/20h-project/internal/core/events"
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 	core_pgx_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool/pgx"
+	outbox_postgres_repository "github.com/Reigor1/20h-project/internal/features/outbox/repository"
 	tasks_postgres_repository "github.com/Reigor1/20h-project/internal/features/tasks/repository/postgres"
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
@@ -34,7 +37,9 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 	defer cancelOperations()
 	assertConnectedTestDatabase(t, ctx, pool, config.Database)
 	testutil.PreparePostgresSchema(t, ctx, pool, "testdata/tasks_schema.sql")
-	repository := tasks_postgres_repository.NewTasksRepository(pool)
+
+	outboxRepository := outbox_postgres_repository.NewOutboxRepository(pool)
+	repository := tasks_postgres_repository.NewTasksRepository(pool, outboxRepository)
 
 	t.Run("CreateTask", func(t *testing.T) {
 		createdAt := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
@@ -88,6 +93,7 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 				if createdTask.Version != 1 {
 					t.Fatalf("CreateTask() version = %d, want database default 1", createdTask.Version)
 				}
+
 				wantTask := domain.NewTask(
 					createdTask.ID,
 					1,
@@ -99,9 +105,14 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 					authorID,
 				)
 				assertTaskEqual(t, "CreateTask()", createdTask, wantTask)
+				assertTaskEqual(t, "stored task", readStoredTask(t, ctx, pool, createdTask.ID), wantTask)
 
-				storedTask := readStoredTask(t, ctx, pool, createdTask.ID)
-				assertTaskEqual(t, "stored task", storedTask, wantTask)
+				assertOutboxEvent(
+					t, ctx, pool, createdTask.ID,
+					core_events.EventTypeTaskCreated,
+					createdTask.Version,
+					"",
+				)
 			})
 		}
 
@@ -109,11 +120,11 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 			authorID := insertTaskAuthor(t, ctx, pool)
 			deleteTaskAuthorDirectly(t, ctx, pool, authorID)
 			tasksBeforeInsert := countTasks(t, ctx, pool)
+			outboxBeforeInsert := countOutboxEvents(t, ctx, pool)
 			createdAt := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 			inputTask := domain.NewTask(0, 0, "Missing author", nil, false, createdAt, nil, authorID)
 
 			_, err := repository.CreateTask(ctx, inputTask)
-
 			if !errors.Is(err, core_errors.ErrNotFound) {
 				t.Fatalf("CreateTask() error = %v, want ErrNotFound", err)
 			}
@@ -123,6 +134,7 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 			if tasksAfterInsert := countTasks(t, ctx, pool); tasksAfterInsert != tasksBeforeInsert {
 				t.Fatalf("task count after rejected insert = %d, want unchanged count %d", tasksAfterInsert, tasksBeforeInsert)
 			}
+			assertOutboxCount(t, ctx, pool, outboxBeforeInsert)
 		})
 
 		t.Run("database constraints reject invalid fields", func(t *testing.T) {
@@ -138,70 +150,31 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 				completedAt  *time.Time
 				wantSQLState string
 			}{
-				{
-					name:         "empty title violates check constraint",
-					title:        "",
-					wantSQLState: "23514",
-				},
-				{
-					name:         "title exceeds varchar length",
-					title:        tooLongTitle,
-					wantSQLState: "22001",
-				},
-				{
-					name:         "empty description violates check constraint",
-					title:        "Valid title",
-					description:  stringPointer(""),
-					wantSQLState: "23514",
-				},
-				{
-					name:         "description exceeds varchar length",
-					title:        "Valid title",
-					description:  &tooLongDescription,
-					wantSQLState: "22001",
-				},
-				{
-					name:         "incomplete task has completion time",
-					title:        "Valid title",
-					completedAt:  &earlierCompletion,
-					wantSQLState: "23514",
-				},
-				{
-					name:         "completed task has no completion time",
-					title:        "Valid title",
-					completed:    true,
-					wantSQLState: "23514",
-				},
-				{
-					name:         "completion time precedes creation time",
-					title:        "Valid title",
-					completed:    true,
-					completedAt:  &earlierCompletion,
-					wantSQLState: "23514",
-				},
+				{name: "empty title violates check constraint", title: "", wantSQLState: "23514"},
+				{name: "title exceeds varchar length", title: tooLongTitle, wantSQLState: "22001"},
+				{name: "empty description violates check constraint", title: "Valid title", description: stringPointer(""), wantSQLState: "23514"},
+				{name: "description exceeds varchar length", title: "Valid title", description: &tooLongDescription, wantSQLState: "22001"},
+				{name: "incomplete task has completion time", title: "Valid title", completedAt: &earlierCompletion, wantSQLState: "23514"},
+				{name: "completed task has no completion time", title: "Valid title", completed: true, wantSQLState: "23514"},
+				{name: "completion time precedes creation time", title: "Valid title", completed: true, completedAt: &earlierCompletion, wantSQLState: "23514"},
 			}
 
 			for _, testCase := range tests {
 				t.Run(testCase.name, func(t *testing.T) {
 					authorID := insertTaskAuthor(t, ctx, pool)
 					tasksBeforeInsert := countTasks(t, ctx, pool)
+					outboxBeforeInsert := countOutboxEvents(t, ctx, pool)
 					inputTask := domain.NewTask(
-						0,
-						0,
-						testCase.title,
-						testCase.description,
-						testCase.completed,
-						createdAt,
-						testCase.completedAt,
-						authorID,
+						0, 0, testCase.title, testCase.description,
+						testCase.completed, createdAt, testCase.completedAt, authorID,
 					)
 
 					_, err := repository.CreateTask(ctx, inputTask)
-
 					assertUnknownDatabaseError(t, "CreateTask()", err, testCase.wantSQLState)
 					if tasksAfterInsert := countTasks(t, ctx, pool); tasksAfterInsert != tasksBeforeInsert {
 						t.Fatalf("task count after rejected insert = %d, want unchanged count %d", tasksAfterInsert, tasksBeforeInsert)
 					}
+					assertOutboxCount(t, ctx, pool, outboxBeforeInsert)
 				})
 			}
 		})
@@ -217,30 +190,16 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 			completed   bool
 			completedAt *time.Time
 		}{
-			{
-				name:        "retrieves task with nullable fields populated",
-				description: &description,
-				completed:   true,
-				completedAt: &completedAt,
-			},
-			{
-				name: "retrieves task with NULL description and completion time",
-			},
+			{name: "retrieves task with nullable fields populated", description: &description, completed: true, completedAt: &completedAt},
+			{name: "retrieves task with NULL description and completion time"},
 		}
 
 		for _, testCase := range tests {
 			t.Run(testCase.name, func(t *testing.T) {
 				authorID := insertTaskAuthor(t, ctx, pool)
 				storedTask := insertTask(
-					t,
-					ctx,
-					pool,
-					authorID,
-					"Get task fixture",
-					testCase.description,
-					testCase.completed,
-					createdAt,
-					testCase.completedAt,
+					t, ctx, pool, authorID, "Get task fixture",
+					testCase.description, testCase.completed, createdAt, testCase.completedAt,
 				)
 
 				got, err := repository.GetTask(ctx, storedTask.ID)
@@ -253,21 +212,10 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 
 		t.Run("returns not found for a missing task", func(t *testing.T) {
 			authorID := insertTaskAuthor(t, ctx, pool)
-			storedTask := insertTask(
-				t,
-				ctx,
-				pool,
-				authorID,
-				"Get missing task",
-				nil,
-				false,
-				createdAt,
-				nil,
-			)
+			storedTask := insertTask(t, ctx, pool, authorID, "Get missing task", nil, false, createdAt, nil)
 			deleteTaskDirectly(t, ctx, pool, storedTask.ID)
 
 			_, err := repository.GetTask(ctx, storedTask.ID)
-
 			if !errors.Is(err, core_errors.ErrNotFound) {
 				t.Fatalf("GetTask() error = %v, want ErrNotFound", err)
 			}
@@ -289,8 +237,7 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetTasks() error = %v, want nil", err)
 			}
-			wantTasks := []domain.Task{firstTask, lastTask}
-			assertTasksEqual(t, "GetTasks()", got, wantTasks)
+			assertTasksEqual(t, "GetTasks()", got, []domain.Task{firstTask, lastTask})
 		})
 
 		t.Run("paginates without an author filter", func(t *testing.T) {
@@ -308,13 +255,11 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetTasks() error = %v, want nil", err)
 			}
-			wantTasks := []domain.Task{secondTask, thirdTask}
-			assertTasksEqual(t, "GetTasks()", got, wantTasks)
+			assertTasksEqual(t, "GetTasks()", got, []domain.Task{secondTask, thirdTask})
 		})
 
 		t.Run("returns a non-nil empty slice for an author without tasks", func(t *testing.T) {
 			authorID := insertTaskAuthor(t, ctx, pool)
-
 			got, err := repository.GetTasks(ctx, &authorID, nil, nil)
 			if err != nil {
 				t.Fatalf("GetTasks() error = %v, want nil", err)
@@ -348,32 +293,24 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 			authorID := insertTaskAuthor(t, ctx, pool)
 			storedTask := insertTask(t, ctx, pool, authorID, "Old title", &description, true, createdAt, &completedAt)
 			updatedTask := domain.NewTask(
-				storedTask.ID,
-				storedTask.Version,
-				"Updated title",
-				nil,
-				false,
-				storedTask.CreatedAt,
-				nil,
-				storedTask.AuthorUserID,
+				storedTask.ID, storedTask.Version,
+				"Updated title", nil, false,
+				storedTask.CreatedAt, nil, storedTask.AuthorUserID,
 			)
 
-			got, err := repository.PatchTask(ctx, storedTask.ID, updatedTask)
+			got, err := repository.PatchTask(ctx, storedTask.ID, storedTask, updatedTask)
 			if err != nil {
 				t.Fatalf("PatchTask() error = %v, want nil", err)
 			}
+
 			wantTask := domain.NewTask(
-				storedTask.ID,
-				storedTask.Version+1,
-				"Updated title",
-				nil,
-				false,
-				storedTask.CreatedAt,
-				nil,
-				storedTask.AuthorUserID,
+				storedTask.ID, storedTask.Version+1,
+				"Updated title", nil, false,
+				storedTask.CreatedAt, nil, storedTask.AuthorUserID,
 			)
 			assertTaskEqual(t, "PatchTask()", got, wantTask)
 			assertTaskEqual(t, "stored patched task", readStoredTask(t, ctx, pool, storedTask.ID), wantTask)
+			assertOutboxEvent(t, ctx, pool, storedTask.ID, core_events.EventTypeTaskUpdated, wantTask.Version, "")
 		})
 
 		t.Run("updates completion timestamp for a completed task", func(t *testing.T) {
@@ -382,76 +319,89 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 			storedTask := insertTask(t, ctx, pool, authorID, "Complete task", nil, false, createdAt, nil)
 			completedAt := createdAt.Add(2 * time.Hour)
 			updatedTask := domain.NewTask(
-				storedTask.ID,
-				storedTask.Version,
-				"Complete task",
-				storedTask.Description,
-				true,
-				storedTask.CreatedAt,
-				&completedAt,
-				storedTask.AuthorUserID,
+				storedTask.ID, storedTask.Version,
+				"Complete task", storedTask.Description, true,
+				storedTask.CreatedAt, &completedAt, storedTask.AuthorUserID,
 			)
 
-			got, err := repository.PatchTask(ctx, storedTask.ID, updatedTask)
+			got, err := repository.PatchTask(ctx, storedTask.ID, storedTask, updatedTask)
 			if err != nil {
 				t.Fatalf("PatchTask() error = %v, want nil", err)
 			}
+
 			wantTask := domain.NewTask(
-				storedTask.ID,
-				storedTask.Version+1,
-				"Complete task",
-				nil,
-				true,
-				storedTask.CreatedAt,
-				&completedAt,
-				storedTask.AuthorUserID,
+				storedTask.ID, storedTask.Version+1,
+				"Complete task", nil, true,
+				storedTask.CreatedAt, &completedAt, storedTask.AuthorUserID,
 			)
 			assertTaskEqual(t, "PatchTask()", got, wantTask)
 			assertTaskEqual(t, "stored patched task", readStoredTask(t, ctx, pool, storedTask.ID), wantTask)
+			assertOutboxEvent(t, ctx, pool, storedTask.ID, core_events.EventTypeTaskCompleted, wantTask.Version, "")
 		})
 
 		t.Run("returns conflict for a stale version without changing the task", func(t *testing.T) {
 			createdAt := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
 			authorID := insertTaskAuthor(t, ctx, pool)
 			storedTask := insertTask(t, ctx, pool, authorID, "Stale update fixture", nil, false, createdAt, nil)
+
+			// Simulate a concurrent update that increments the database version.
+			_, err := pool.Exec(
+				ctx,
+				"UPDATE todoapp.tasks SET version = version + 1 WHERE id = $1",
+				storedTask.ID,
+			)
+			if err != nil {
+				t.Fatalf("increment task version: %v", err)
+			}
+
+			outboxBeforeUpdate := countOutboxEvents(t, ctx, pool)
+
 			staleTask := domain.NewTask(
 				storedTask.ID,
-				storedTask.Version-1,
-				"Should not be saved",
-				nil,
-				false,
+				storedTask.Version,
+				storedTask.Title,
+				storedTask.Description,
+				storedTask.Completed,
 				storedTask.CreatedAt,
-				nil,
+				storedTask.CompletedAt,
 				storedTask.AuthorUserID,
 			)
 
-			_, err := repository.PatchTask(ctx, storedTask.ID, staleTask)
+			updatedStaleTask := domain.NewTask(
+				staleTask.ID,
+				staleTask.Version,
+				"Should not be saved",
+				nil,
+				false,
+				staleTask.CreatedAt,
+				nil,
+				staleTask.AuthorUserID,
+			)
+
+			_, err = repository.PatchTask(ctx, storedTask.ID, staleTask, updatedStaleTask)
 			if !errors.Is(err, core_errors.ErrConflict) {
 				t.Fatalf("PatchTask() error = %v, want ErrConflict", err)
 			}
-			assertTaskEqual(t, "task after stale update", readStoredTask(t, ctx, pool, storedTask.ID), storedTask)
+
+			currentTask := storedTask
+			currentTask.Version++
+
+			assertTaskEqual(t, "task after stale update", readStoredTask(t, ctx, pool, storedTask.ID), currentTask)
+			assertOutboxCount(t, ctx, pool, outboxBeforeUpdate)
 		})
 
 		t.Run("returns conflict for a missing task", func(t *testing.T) {
 			createdAt := time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC)
 			authorID := insertTaskAuthor(t, ctx, pool)
 			storedTask := insertTask(t, ctx, pool, authorID, "Missing update fixture", nil, false, createdAt, nil)
+
 			deleteTaskDirectly(t, ctx, pool, storedTask.ID)
+			outboxBeforeUpdate := countOutboxEvents(t, ctx, pool)
 
-			_, err := repository.PatchTask(ctx, storedTask.ID, storedTask)
-			if !errors.Is(err, core_errors.ErrConflict) {
-				t.Fatalf("PatchTask() error = %v, want ErrConflict", err)
-			}
-		})
-
-		t.Run("returns database error for an invalid update without changing the task", func(t *testing.T) {
-			createdAt := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
-			authorID := insertTaskAuthor(t, ctx, pool)
-			storedTask := insertTask(t, ctx, pool, authorID, "Valid update fixture", nil, false, createdAt, nil)
-			invalidTask := domain.NewTask(
+			updatedTask := domain.NewTask(
 				storedTask.ID,
 				storedTask.Version,
-				"",
+				"Updated missing task",
 				nil,
 				false,
 				storedTask.CreatedAt,
@@ -459,14 +409,34 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 				storedTask.AuthorUserID,
 			)
 
-			_, err := repository.PatchTask(ctx, storedTask.ID, invalidTask)
+			_, err := repository.PatchTask(ctx, storedTask.ID, storedTask, updatedTask)
+			if !errors.Is(err, core_errors.ErrConflict) {
+				t.Fatalf("PatchTask() error = %v, want ErrConflict", err)
+			}
+
+			assertOutboxCount(t, ctx, pool, outboxBeforeUpdate)
+		})
+
+		t.Run("returns database error for an invalid update without changing the task", func(t *testing.T) {
+			createdAt := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+			authorID := insertTaskAuthor(t, ctx, pool)
+			storedTask := insertTask(t, ctx, pool, authorID, "Valid update fixture", nil, false, createdAt, nil)
+			outboxBeforeUpdate := countOutboxEvents(t, ctx, pool)
+			invalidTask := domain.NewTask(
+				storedTask.ID, storedTask.Version,
+				"", nil, false,
+				storedTask.CreatedAt, nil, storedTask.AuthorUserID,
+			)
+
+			_, err := repository.PatchTask(ctx, storedTask.ID, storedTask, invalidTask)
 			assertUnknownDatabaseError(t, "PatchTask()", err, "23514")
 			assertTaskEqual(t, "task after rejected update", readStoredTask(t, ctx, pool, storedTask.ID), storedTask)
+			assertOutboxCount(t, ctx, pool, outboxBeforeUpdate)
 		})
 	})
 
 	t.Run("DeleteTask", func(t *testing.T) {
-		t.Run("deletes existing task and reports a missing task", func(t *testing.T) {
+		t.Run("deletes existing task and preserves its snapshot in outbox", func(t *testing.T) {
 			createdAt := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
 			authorID := insertTaskAuthor(t, ctx, pool)
 			storedTask := insertTask(t, ctx, pool, authorID, "Delete task fixture", nil, false, createdAt, nil)
@@ -478,10 +448,87 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 				t.Fatalf("task %d still exists after DeleteTask()", storedTask.ID)
 			}
 
+			assertOutboxEvent(
+				t, ctx, pool, storedTask.ID,
+				core_events.EventTypeTaskDeleted,
+				storedTask.Version,
+				storedTask.Title,
+			)
+
+			outboxBeforeMissingDelete := countOutboxEvents(t, ctx, pool)
 			err := repository.DeleteTask(ctx, storedTask.ID)
 			if !errors.Is(err, core_errors.ErrNotFound) {
 				t.Fatalf("DeleteTask() for missing task error = %v, want ErrNotFound", err)
 			}
+			assertOutboxCount(t, ctx, pool, outboxBeforeMissingDelete)
+		})
+	})
+
+	t.Run("TransactionalOutbox", func(t *testing.T) {
+		t.Run("rolls back task creation when outbox insert fails", func(t *testing.T) {
+			authorID := insertTaskAuthor(t, ctx, pool)
+			tasksBeforeInsert := countTasks(t, ctx, pool)
+			outboxBeforeInsert := countOutboxEvents(t, ctx, pool)
+
+			_, err := pool.Exec(
+				ctx,
+				`CREATE FUNCTION todoapp.reject_outbox_insert()
+				 RETURNS TRIGGER
+				 LANGUAGE plpgsql
+				 AS $$
+				 BEGIN
+				     RAISE EXCEPTION 'forced outbox insert failure';
+				 END;
+				 $$`,
+			)
+			if err != nil {
+				t.Fatalf("create outbox failure trigger function: %v", err)
+			}
+
+			t.Cleanup(func() {
+				cleanupContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				if _, err := pool.Exec(cleanupContext, `DROP TRIGGER IF EXISTS reject_outbox_insert ON todoapp.outbox`); err != nil {
+					t.Errorf("drop outbox failure trigger: %v", err)
+				}
+				if _, err := pool.Exec(cleanupContext, `DROP FUNCTION IF EXISTS todoapp.reject_outbox_insert()`); err != nil {
+					t.Errorf("drop outbox failure trigger function: %v", err)
+				}
+			})
+
+			_, err = pool.Exec(
+				ctx,
+				`CREATE TRIGGER reject_outbox_insert
+				 BEFORE INSERT ON todoapp.outbox
+				 FOR EACH ROW
+				 EXECUTE FUNCTION todoapp.reject_outbox_insert()`,
+			)
+			if err != nil {
+				t.Fatalf("create outbox failure trigger: %v", err)
+			}
+
+			createdAt := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
+			inputTask := domain.NewTask(
+				domain.UninitializedID,
+				domain.UninitializedVersion,
+				"Outbox rollback fixture",
+				nil,
+				false,
+				createdAt,
+				nil,
+				authorID,
+			)
+
+			_, err = repository.CreateTask(ctx, inputTask)
+			if err == nil {
+				t.Fatal("CreateTask() error = nil, want outbox insert error")
+			}
+
+			if tasksAfterInsert := countTasks(t, ctx, pool); tasksAfterInsert != tasksBeforeInsert {
+				t.Fatalf("task count after outbox failure = %d, want unchanged count %d", tasksAfterInsert, tasksBeforeInsert)
+			}
+			assertOutboxCount(t, ctx, pool, outboxBeforeInsert)
 		})
 	})
 }
@@ -646,6 +693,127 @@ func taskExists(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, tas
 	return exists
 }
 
+func countOutboxEvents(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool) int {
+	t.Helper()
+
+	var count int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM todoapp.outbox").Scan(&count); err != nil {
+		t.Fatalf("count outbox events: %v", err)
+	}
+	return count
+}
+
+func countOutboxEventsForTask(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, taskID int) int {
+	t.Helper()
+
+	var count int
+	if err := pool.QueryRow(
+		ctx,
+		`SELECT count(*)
+		 FROM todoapp.outbox
+		 WHERE aggregate_type = $1 AND aggregate_id = $2`,
+		core_events.AggregateTypeTask,
+		taskID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count outbox events for task %d: %v", taskID, err)
+	}
+	return count
+}
+
+func assertOutboxCount(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, want int) {
+	t.Helper()
+
+	got := countOutboxEvents(t, ctx, pool)
+	if got != want {
+		t.Fatalf("outbox event count = %d, want %d", got, want)
+	}
+}
+
+func assertOutboxEvent(
+	t *testing.T,
+	ctx context.Context,
+	pool *core_pgx_pool.Pool,
+	taskID int,
+	wantEventType core_events.EventType,
+	wantAggregateVersion int,
+	wantPayloadContains string,
+) {
+	t.Helper()
+
+	if count := countOutboxEventsForTask(t, ctx, pool, taskID); count != 1 {
+		t.Fatalf("outbox event count for task %d = %d, want 1", taskID, count)
+	}
+
+	var (
+		eventID          string
+		eventType        string
+		schemaVersion    int
+		aggregateType    string
+		aggregateID      int64
+		aggregateVersion int64
+		payload          string
+	)
+
+	err := pool.QueryRow(
+		ctx,
+		`SELECT
+			event_id::text,
+			event_type,
+			schema_version,
+			aggregate_type,
+			aggregate_id,
+			aggregate_version,
+			payload::text
+		 FROM todoapp.outbox
+		 WHERE aggregate_type = $1 AND aggregate_id = $2
+		 ORDER BY id DESC
+		 LIMIT 1`,
+		core_events.AggregateTypeTask,
+		taskID,
+	).Scan(
+		&eventID,
+		&eventType,
+		&schemaVersion,
+		&aggregateType,
+		&aggregateID,
+		&aggregateVersion,
+		&payload,
+	)
+	if err != nil {
+		t.Fatalf("read outbox event for task %d: %v", taskID, err)
+	}
+
+	if eventID == "" {
+		t.Fatal("outbox event_id is empty")
+	}
+	if eventType != string(wantEventType) {
+		t.Errorf("outbox event_type = %q, want %q", eventType, wantEventType)
+	}
+	if schemaVersion != core_events.CurrentSchemaVersion {
+		t.Errorf("outbox schema_version = %d, want %d", schemaVersion, core_events.CurrentSchemaVersion)
+	}
+	if aggregateType != core_events.AggregateTypeTask {
+		t.Errorf("outbox aggregate_type = %q, want %q", aggregateType, core_events.AggregateTypeTask)
+	}
+	if aggregateID != int64(taskID) {
+		t.Errorf("outbox aggregate_id = %d, want %d", aggregateID, taskID)
+	}
+	if aggregateVersion != int64(wantAggregateVersion) {
+		t.Errorf("outbox aggregate_version = %d, want %d", aggregateVersion, wantAggregateVersion)
+	}
+
+	var payloadObject map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(payload), &payloadObject); err != nil {
+		t.Fatalf("decode outbox payload: %v", err)
+	}
+	if payloadObject == nil {
+		t.Fatal("outbox payload must be a JSON object")
+	}
+	if wantPayloadContains != "" && !strings.Contains(payload, wantPayloadContains) {
+		t.Errorf("outbox payload = %s, want it to contain %q", payload, wantPayloadContains)
+	}
+}
+
 func assertTaskEqual(t *testing.T, operation string, got, want domain.Task) {
 	t.Helper()
 
@@ -663,7 +831,6 @@ func assertTasksEqual(t *testing.T, operation string, got, want []domain.Task) {
 	if len(got) != len(want) {
 		t.Fatalf("%s returned %d tasks, want %d: got %+v, want %+v", operation, len(got), len(want), got, want)
 	}
-
 	for index := range want {
 		assertTaskEqual(t, fmt.Sprintf("%s task at index %d", operation, index), got[index], want[index])
 	}
@@ -673,7 +840,6 @@ func equalStringPointers(left, right *string) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
 	}
-
 	return *left == *right
 }
 
@@ -681,7 +847,6 @@ func equalTimePointers(left, right *time.Time) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
 	}
-
 	return left.Equal(*right)
 }
 

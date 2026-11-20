@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.16.0
 	github.com/exaring/otelpgx v0.13.0
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/google/uuid v1.6.0

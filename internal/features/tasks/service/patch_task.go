@@ -16,18 +16,29 @@ func (s *TasksService) PathTask(
 	ctx, span := s.tracer.Start(ctx, "tasks.update")
 	defer span.End()
 
-	task, err := s.tasksRepository.GetTask(ctx, id)
+	before, err := s.tasksRepository.GetTask(ctx, id)
 	if err != nil {
 		core_observability.MarkSpanError(span, "tasks.update")
 		return domain.Task{}, fmt.Errorf("get task: %w", err)
 	}
 
-	if err := task.ApplyPatch(path); err != nil {
+	after := before
+
+	if err := after.ApplyPatch(path); err != nil {
 		core_observability.MarkSpanError(span, "tasks.update")
-		return domain.Task{}, fmt.Errorf("apply task path: %w", err)
+		return domain.Task{}, fmt.Errorf("apply task patch: %w", err)
 	}
 
-	patchedTask, err := s.tasksRepository.PatchTask(ctx, id, task)
+	if sameTaskState(before, after) {
+		return before, nil
+	}
+
+	patchedTask, err := s.tasksRepository.PatchTask(
+		ctx,
+		id,
+		before,
+		after,
+	)
 	if err != nil {
 		core_observability.MarkSpanError(span, "tasks.update")
 		return domain.Task{}, fmt.Errorf("patch task: %w", err)
