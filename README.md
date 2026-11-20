@@ -1,57 +1,57 @@
 # 20h-project
 
-A Go backend project built to explore production-oriented backend engineering: REST API design, PostgreSQL transactions, Redis caching, asynchronous event processing with Kafka, and observability.
+Backend-проект на Go, предназначенный для изучения практик разработки серверных приложений, ориентированных на эксплуатацию в production: проектирования REST API, транзакций PostgreSQL, кэширования в Redis, асинхронной обработки событий через Kafka и наблюдаемости.
 
-The application manages users and tasks. Task changes are written to PostgreSQL and published asynchronously through a transactional Outbox. A separate Activity Worker consumes Kafka events and builds an auditable task history.
+Приложение управляет пользователями и задачами. Изменения задач сохраняются в PostgreSQL и асинхронно публикуются через Transactional Outbox. Отдельный Activity Worker получает события из Kafka и формирует историю изменений задач.
 
-> The repository is a learning and portfolio project. The architecture demonstrates reliability and operational patterns, but the local Docker Compose environment is intended for development, not production deployment.
+> Репозиторий является учебным проектом и проектом для портфолио. Архитектура демонстрирует практики надёжности и эксплуатации, однако локальная среда Docker Compose предназначена для разработки, а не для развёртывания в production.
 
-## Contents
+## Содержание
 
-- [Project overview](#project-overview)
-- [Architecture](#architecture)
-- [Task event lifecycle](#task-event-lifecycle)
-- [Reliability and delivery semantics](#reliability-and-delivery-semantics)
-- [Kafka cluster](#kafka-cluster)
+- [Обзор проекта](#обзор-проекта)
+- [Архитектура](#архитектура)
+- [Жизненный цикл события задачи](#жизненный-цикл-события-задачи)
+- [Надёжность и семантика доставки](#надёжность-и-семантика-доставки)
+- [Кластер Kafka](#кластер-kafka)
 - [REST API](#rest-api)
-- [Technology stack](#technology-stack)
-- [Observability](#observability)
-- [Run locally](#run-locally)
-- [Run with Docker Compose](#run-with-docker-compose)
-- [Configuration](#configuration)
-- [Testing](#testing)
-- [Useful Make targets](#useful-make-targets)
-- [Repository structure](#repository-structure)
-- [Current scope and limitations](#current-scope-and-limitations)
+- [Технологический стек](#технологический-стек)
+- [Наблюдаемость](#наблюдаемость)
+- [Локальный запуск](#локальный-запуск)
+- [Запуск через Docker Compose](#запуск-через-docker-compose)
+- [Конфигурация](#конфигурация)
+- [Тестирование](#тестирование)
+- [Полезные команды Make](#полезные-команды-make)
+- [Структура репозитория](#структура-репозитория)
+- [Текущий объём проекта и ограничения](#текущий-объём-проекта-и-ограничения)
 
-## Project overview
+## Обзор проекта
 
-The project consists of three executable entry points:
+Проект состоит из трёх исполняемых приложений:
 
-| Executable | Responsibility |
+| Приложение | Ответственность |
 |---|---|
-| `cmd/todoapp` | HTTP API, business features, PostgreSQL access, Redis cache, and the background Outbox Publisher |
-| `cmd/activity-worker` | Kafka Consumer that validates task events and persists Activity history |
-| `cmd/activity-dlq-replay` | Utility for replaying an individual message from the Activity Dead Letter Queue |
+| <code>cmd/todoapp</code> | HTTP API, бизнес-функциональность, доступ к PostgreSQL, кэш Redis и фоновый Outbox Publisher |
+| <code>cmd/activity-worker</code> | Kafka Consumer, который проверяет события задач и сохраняет историю Activity |
+| <code>cmd/activity-dlq-replay</code> | Утилита для повторной публикации отдельного сообщения из Dead Letter Queue |
 
-The API and Activity Worker are separate processes. They can be built, started, stopped, and scaled independently.
+API и Activity Worker являются отдельными процессами. Их можно независимо собирать, запускать, останавливать и масштабировать.
 
-### Functional scope
+### Функциональность
 
-- User management: create, read, update, and delete users.
-- Task management: create, read, update, and delete tasks.
-- Pagination for collection and Activity history endpoints using `limit` and `offset`.
-- Filtering task lists and statistics by `user_id`.
-- Statistics filtering by a date range.
-- Task Activity history generated asynchronously from domain events.
-- Redis cache for global, unfiltered task statistics.
-- Kafka event delivery using a PostgreSQL transactional Outbox.
-- Retry handling and a Dead Letter Queue for permanently invalid messages.
-- Metrics, distributed traces, structured logs, and load/observability test scenarios.
+- Управление пользователями: создание, получение, обновление и удаление.
+- Управление задачами: создание, получение, обновление и удаление.
+- Пагинация списков и истории Activity с помощью параметров <code>limit</code> и <code>offset</code>.
+- Фильтрация списков задач и статистики по <code>user_id</code>.
+- Фильтрация статистики по диапазону дат.
+- История изменений задач, формируемая асинхронно на основе доменных событий.
+- Кэш Redis для общей статистики задач без фильтров.
+- Доставка событий Kafka с использованием Transactional Outbox в PostgreSQL.
+- Повторная обработка ошибок и Dead Letter Queue для сообщений, которые невозможно обработать.
+- Метрики, распределённые трассировки, структурированные логи и сценарии нагрузочного тестирования и проверки наблюдаемости.
 
-## Architecture
+## Архитектура
 
-```mermaid
+~~~mermaid
 flowchart LR
     Client[HTTP client] --> API[cmd/todoapp]
     API --> Features[Users / Tasks / Statistics / Activity]
@@ -83,309 +83,309 @@ flowchart LR
     Prometheus --> Grafana[Grafana]
     Tempo --> Grafana
     Loki --> Grafana
-```
+~~~
 
-### Main components
+### Основные компоненты
 
-| Component | Role |
+| Компонент | Назначение |
 |---|---|
-| HTTP API | Exposes the application features under `/api/v1` |
-| PostgreSQL | Source of truth for users, tasks, Outbox events, and Activity history |
-| Redis | Cache for global statistics; PostgreSQL remains authoritative |
-| Outbox Publisher | Claims unpublished Outbox rows and publishes them to Kafka |
-| Kafka | Transports task domain events between independent processes |
-| Activity Worker | Consumes events and persists the task history |
-| DLQ | Holds messages that cannot be processed because they are permanently invalid |
-| Prometheus | Stores metrics as time series |
-| OpenTelemetry Collector | Receives telemetry from the Go processes and routes it to Prometheus and Tempo |
-| Tempo | Stores distributed traces |
-| Grafana Alloy and Loki | Collect and store application logs |
-| Grafana | Provides a common UI for metrics, traces, and logs |
+| HTTP API | Предоставляет функциональность приложения по базовому пути <code>/api/v1</code> |
+| PostgreSQL | Основной источник данных для пользователей, задач, событий Outbox и истории Activity |
+| Redis | Кэш общей статистики; PostgreSQL остаётся основным источником данных |
+| Outbox Publisher | Получает неопубликованные записи Outbox и отправляет их в Kafka |
+| Kafka | Передаёт доменные события задач между независимыми процессами |
+| Activity Worker | Получает события и сохраняет историю изменений задач |
+| DLQ | Хранит сообщения, которые невозможно обработать из-за постоянных ошибок |
+| Prometheus | Хранит метрики в виде временных рядов |
+| OpenTelemetry Collector | Получает телеметрию от Go-процессов и направляет её в Prometheus и Tempo |
+| Tempo | Хранит распределённые трассировки |
+| Grafana Alloy и Loki | Собирают и хранят логи приложения |
+| Grafana | Предоставляет единый интерфейс для просмотра метрик, трассировок и логов |
 
-## Task event lifecycle
+## Жизненный цикл события задачи
 
-A task mutation does not publish to Kafka directly inside the HTTP request. Instead, the application uses the Transactional Outbox pattern.
+При изменении задачи приложение не отправляет событие в Kafka непосредственно в рамках HTTP-запроса. Вместо этого используется паттерн Transactional Outbox.
 
-1. A request reaches the Task HTTP handler and the Task Service.
-2. The Tasks Repository starts a PostgreSQL transaction.
-3. The repository inserts, updates, or deletes the task.
-4. It creates a versioned event envelope, such as `task.created`, `task.updated`, or `task.deleted`.
-5. The event is inserted into `todoapp.outbox` using the same transaction.
-6. PostgreSQL commits the task mutation and Outbox row atomically.
-7. The Outbox Publisher claims eligible rows and publishes them to `task-events`.
-8. After Kafka returns a successful delivery report, the Publisher marks the Outbox row as published.
-9. An Activity Worker in the `activity-workers` Consumer Group receives the event, validates it, and writes it to `todoapp.task_activity`.
-10. The Worker commits the Kafka offset only after the database write succeeds.
+1. Запрос поступает в HTTP Handler задачи, а затем в Task Service.
+2. Tasks Repository начинает транзакцию PostgreSQL.
+3. Репозиторий создаёт, обновляет или удаляет задачу.
+4. Он формирует версионированный конверт события, например <code>task.created</code>, <code>task.updated</code> или <code>task.deleted</code>.
+5. Событие записывается в <code>todoapp.outbox</code> в рамках той же транзакции.
+6. PostgreSQL атомарно фиксирует изменение задачи и запись Outbox.
+7. Outbox Publisher получает подходящие записи и публикует их в <code>task-events</code>.
+8. После получения от Kafka подтверждения успешной доставки Publisher помечает запись Outbox как опубликованную.
+9. Activity Worker из Consumer Group <code>activity-workers</code> получает событие, проверяет его и сохраняет в <code>todoapp.task_activity</code>.
+10. Worker фиксирует Kafka offset только после успешной записи в базу данных.
 
-This decouples the HTTP request from Activity history processing. The API does not wait for the Activity Worker to finish.
+Такой подход отделяет HTTP-запрос от обработки истории Activity. API не ожидает завершения работы Activity Worker.
 
-### Event envelope
+### Конверт события
 
-Events use a versioned envelope with fields including:
+События используют версионированный конверт со следующими полями:
 
-- `event_id`: unique event identifier.
-- `event_type`: domain event type.
-- `schema_version`: event schema version.
-- `aggregate_type`, `aggregate_id`, `aggregate_version`: aggregate identity and version.
-- `occurred_at`: event creation time.
-- `payload`: event-specific data.
+- <code>event_id</code> — уникальный идентификатор события.
+- <code>event_type</code> — тип доменного события.
+- <code>schema_version</code> — версия схемы события.
+- <code>aggregate_type</code>, <code>aggregate_id</code>, <code>aggregate_version</code> — тип, идентификатор и версия агрегата.
+- <code>occurred_at</code> — время создания события.
+- <code>payload</code> — данные конкретного события.
 
-The event contract and validation are implemented in `internal/core/events`.
+Контракт события и его валидация реализованы в <code>internal/core/events</code>.
 
 ### Transactional Outbox
 
-The Outbox table stores the event payload together with publishing state:
+Таблица Outbox хранит данные события вместе с состоянием его публикации:
 
-- `published_at` identifies successfully published rows.
-- `next_attempt_at` controls when a failed event can be retried.
-- `lease_token` and `lease_until` protect rows claimed by a Publisher.
-- `attempts` and `last_error` store retry information.
-- `traceparent` and `tracestate` preserve W3C trace context across the asynchronous boundary.
+- <code>published_at</code> указывает, что событие было успешно опубликовано.
+- <code>next_attempt_at</code> определяет время следующей попытки после ошибки.
+- <code>lease_token</code> и <code>lease_until</code> защищают записи, полученные Publisher для обработки.
+- <code>attempts</code> и <code>last_error</code> хранят информацию о попытках публикации и последней ошибке.
+- <code>traceparent</code> и <code>tracestate</code> сохраняют контекст W3C Trace Context при переходе к асинхронной обработке.
 
-The claim query uses `FOR UPDATE SKIP LOCKED`, so multiple claimers do not take the same active row. It also prevents a later event for the same aggregate from being claimed while an earlier event remains unpublished.
+Запрос получения записей использует <code>FOR UPDATE SKIP LOCKED</code>, поэтому несколько экземпляров Publisher не захватывают одну и ту же активную запись. Кроме того, следующая запись для того же агрегата не может быть получена, пока более раннее событие этого агрегата остаётся неопубликованным.
 
-The Publisher sends the task ID as the Kafka message key. Kafka therefore routes events for the same task using the same key and partitioning rule.
+Publisher передаёт ID задачи в качестве ключа Kafka-сообщения. Благодаря этому Kafka направляет события одной задачи в одну партицию в соответствии с правилом партиционирования по ключу.
 
-## Reliability and delivery semantics
+## Надёжность и семантика доставки
 
-The delivery model is **at-least-once**, not exactly-once.
+Используется семантика доставки **at-least-once (как минимум один раз)**, а не exactly-once (ровно один раз).
 
-A message can be published to Kafka more than once. For example, Kafka may acknowledge a message while the subsequent Outbox status update fails. Once the lease expires, the event can be published again.
+Одно и то же сообщение может быть опубликовано в Kafka несколько раз. Например, Kafka может подтвердить доставку сообщения, но последующее обновление статуса Outbox завершится ошибкой. После истечения lease событие может быть опубликовано повторно.
 
-The Activity side is designed to tolerate this:
+Обработка Activity рассчитана на такие повторные доставки:
 
-- `task_activity.event_id` has a unique constraint.
-- Activity insertion uses `ON CONFLICT (event_id) DO NOTHING`.
-- The repository reports whether a row was inserted.
-- A duplicate delivery is treated as successfully handled after the existing record is confirmed and the Kafka offset is committed.
+- На <code>task_activity.event_id</code> установлено ограничение уникальности.
+- При добавлении Activity используется <code>ON CONFLICT (event_id) DO NOTHING</code>.
+- Репозиторий сообщает, была ли действительно добавлена новая запись.
+- Повторная доставка считается успешно обработанной после подтверждения существующей записи и фиксации Kafka offset.
 
-### Retry handling
+### Повторные попытки
 
-The Outbox Publisher schedules another attempt when event serialization or Kafka publication fails. Its retry delay grows exponentially up to the configured maximum.
+Outbox Publisher планирует новую попытку, если сериализация события или его публикация в Kafka завершается ошибкой. Задержка между попытками экспоненциально увеличивается до заданного максимального значения.
 
-The Activity Worker retries transient processing and offset-commit errors with exponential backoff. It pauses consumption while retrying and resumes after the operation succeeds.
+Activity Worker повторяет операции обработки временных ошибок и фиксации offset, используя экспоненциальную задержку. На время повторной попытки он приостанавливает получение сообщений и возобновляет его после успешного завершения операции.
 
-Permanently invalid messages — for example malformed JSON, an invalid envelope, an unsupported event type, or an unsupported schema version — are sent to `task-events.dlq`.
+Сообщения с постоянными ошибками — например, некорректным JSON, невалидным конвертом, неподдерживаемым типом события или версией схемы — отправляются в <code>task-events.dlq</code>.
 
-The source offset is committed only after the DLQ Producer confirms successful delivery.
+Исходный offset фиксируется только после того, как DLQ Producer подтвердит успешную публикацию сообщения в DLQ.
 
-### DLQ replay
+### Повторная публикация из DLQ
 
-An individual DLQ message can be replayed by specifying its partition and offset:
+Отдельное сообщение из DLQ можно повторно опубликовать, указав его партицию и offset:
 
-```bash
+~~~bash
 make activity-dlq-replay DLQ_PARTITION=1 DLQ_OFFSET=125
-```
+~~~
 
-The replay utility reads the selected DLQ record and republishes its original payload and key to the original source topic and partition. It does not silently rewrite the event.
+Утилита повторной публикации считывает выбранную запись DLQ и отправляет исходные payload и key в исходный топик и партицию. Содержимое события при этом не изменяется автоматически.
 
-Replaying an event can result in another delivery. The Activity repository's `event_id` uniqueness constraint protects the stored history from duplicate rows.
+Повторная публикация может привести к повторной доставке события. Ограничение уникальности <code>event_id</code> в Activity Repository защищает сохранённую историю от появления дублирующих записей.
 
-## Kafka cluster
+## Кластер Kafka
 
-The local environment runs three Apache Kafka 4.4.0 brokers in KRaft mode. Each node has both broker and controller roles; ZooKeeper is not used.
+Локальная среда запускает три брокера Apache Kafka 4.4.0 в режиме KRaft. Каждый узел совмещает роли broker и controller; ZooKeeper не используется.
 
-| Setting | Value |
+| Параметр | Значение |
 |---|---:|
-| Brokers | 3 |
-| Controllers | 3 (combined with brokers) |
-| Partitions per application topic | 3 |
-| Replication factor | 3 |
-| Minimum in-sync replicas | 2 |
-| Automatic topic creation | Disabled |
-| Producer acknowledgements | `acks=all` |
-| Producer idempotence | Enabled |
+| Брокеры | 3 |
+| Контроллеры | 3 (совмещены с брокерами) |
+| Количество партиций в каждом прикладном топике | 3 |
+| Фактор репликации | 3 |
+| Минимальное количество синхронных реплик | 2 |
+| Автоматическое создание топиков | Отключено |
+| Подтверждения Producer | <code>acks=all</code> |
+| Идемпотентность Producer | Включена |
 
-### Topics
+### Топики
 
-| Topic | Purpose | Retention |
+| Топик | Назначение | Время хранения |
 |---|---|---:|
-| `task-events` | Normal task domain events | 7 days |
-| `task-events.dlq` | Permanently invalid events | 30 days |
+| <code>task-events</code> | Обычные доменные события задач | 7 дней |
+| <code>task-events.dlq</code> | События, которые невозможно обработать | 30 дней |
 
-Both topics use three partitions, replication factor three, and `min.insync.replicas=2`. Unclean leader election is disabled.
+Оба топика используют три партиции, фактор репликации 3 и <code>min.insync.replicas=2</code>. Нештатное избрание лидера (unclean leader election) отключено.
 
-Topics are created and configured explicitly by the Makefile:
+Топики создаются и настраиваются явно с помощью Makefile:
 
-```bash
+~~~bash
 make kafka-up
 make kafka-topics-setup
-```
+~~~
 
-The Kafka UI is available at [http://localhost:8080](http://localhost:8080).
+Kafka UI доступен по адресу [http://localhost:8080](http://localhost:8080).
 
-### Consumer scaling
+### Масштабирование Consumer
 
-The Activity Workers share the `activity-workers` Consumer Group. The default Make target starts three Worker instances:
+Экземпляры Activity Worker входят в одну Consumer Group — <code>activity-workers</code>. Цель Make по умолчанию запускает три экземпляра Worker:
 
-```bash
+~~~bash
 make activity-workers-up
-```
+~~~
 
-The replica count can be changed:
+Количество экземпляров можно изменить:
 
-```bash
+~~~bash
 make activity-workers-up ACTIVITY_WORKER_REPLICAS=2
-```
+~~~
 
-Kafka assigns partitions to members of the Consumer Group. With three partitions, at most three members can actively own a partition for this topic at one time.
+Kafka распределяет партиции между участниками Consumer Group. При наличии трёх партиций не более трёх участников могут одновременно владеть партициями этого топика.
 
 ## REST API
 
-Base path: `/api/v1`
+Базовый путь: <code>/api/v1</code>
 
-Interactive API documentation is available at:
+Интерактивная документация API доступна по адресу:
 
 [http://localhost:5050/swagger/index.html](http://localhost:5050/swagger/index.html)
 
-### Users
+### Пользователи
 
-| Method | Endpoint | Description |
+| Метод | Endpoint | Описание |
 |---|---|---|
-| `POST` | `/users` | Create a user |
-| `GET` | `/users` | List users; supports `limit` and `offset` |
-| `GET` | `/users/{id}` | Get a user |
-| `PATCH` | `/users/{id}` | Update a user |
-| `DELETE` | `/users/{id}` | Delete a user |
+| <code>POST</code> | <code>/users</code> | Создать пользователя |
+| <code>GET</code> | <code>/users</code> | Получить список пользователей; поддерживаются <code>limit</code> и <code>offset</code> |
+| <code>GET</code> | <code>/users/{id}</code> | Получить пользователя |
+| <code>PATCH</code> | <code>/users/{id}</code> | Обновить пользователя |
+| <code>DELETE</code> | <code>/users/{id}</code> | Удалить пользователя |
 
-### Tasks
+### Задачи
 
-| Method | Endpoint | Description |
+| Метод | Endpoint | Описание |
 |---|---|---|
-| `POST` | `/tasks` | Create a task |
-| `GET` | `/tasks` | List tasks; supports `user_id`, `limit`, and `offset` |
-| `GET` | `/tasks/{id}` | Get a task |
-| `PATCH` | `/tasks/{id}` | Update a task |
-| `DELETE` | `/tasks/{id}` | Delete a task |
+| <code>POST</code> | <code>/tasks</code> | Создать задачу |
+| <code>GET</code> | <code>/tasks</code> | Получить список задач; поддерживаются <code>user_id</code>, <code>limit</code> и <code>offset</code> |
+| <code>GET</code> | <code>/tasks/{id}</code> | Получить задачу |
+| <code>PATCH</code> | <code>/tasks/{id}</code> | Обновить задачу |
+| <code>DELETE</code> | <code>/tasks/{id}</code> | Удалить задачу |
 
-User and Task updates use a `version` field for optimistic concurrency control. An update based on a stale version returns a conflict instead of silently overwriting a concurrent change.
+При обновлении пользователя или задачи используется поле <code>version</code> для оптимистичной блокировки. Попытка обновления на основе устаревшей версии приводит к конфликту, а не к незаметной перезаписи результата параллельного изменения.
 
-### Activity history
+### История Activity
 
-| Method | Endpoint | Description |
+| Метод | Endpoint | Описание |
 |---|---|---|
-| `GET` | `/tasks/{task_id}/activity` | Read a task's event history; supports `limit` and `offset` |
+| <code>GET</code> | <code>/tasks/{task_id}/activity</code> | Получить историю событий задачи; поддерживаются <code>limit</code> и <code>offset</code> |
 
-Activity history is read from PostgreSQL. Results are ordered by task version in ascending order.
+История Activity читается из PostgreSQL. Результаты упорядочены по версии задачи по возрастанию.
 
-For `task.updated` and `task.completed`, the event payload contains `before` and `after` snapshots. `author_user_id` identifies the task owner; it does not necessarily identify the user who performed the change.
+Для событий <code>task.updated</code> и <code>task.completed</code> payload содержит снимки состояния <code>before</code> и <code>after</code>. Поле <code>author_user_id</code> обозначает владельца задачи и не обязательно указывает на пользователя, который выполнил изменение.
 
-### Statistics
+### Статистика
 
-| Method | Endpoint | Description |
+| Метод | Endpoint | Описание |
 |---|---|---|
-| `GET` | `/statistics` | Get task statistics |
+| <code>GET</code> | <code>/statistics</code> | Получить статистику задач |
 
-Optional query parameters:
+Необязательные query-параметры:
 
-- `user_id`: restrict the statistics to a user.
-- `from`: start date in `YYYY-MM-DD` format.
-- `to`: end date in `YYYY-MM-DD` format.
+- <code>user_id</code> — ограничить статистику задачами конкретного пользователя.
+- <code>from</code> — начальная дата в формате <code>YYYY-MM-DD</code>.
+- <code>to</code> — конечная дата в формате <code>YYYY-MM-DD</code>.
 
-The response includes tasks created, tasks completed, completion rate, and average completion time.
+Ответ содержит количество созданных задач, количество завершённых задач, процент завершения и среднее время выполнения.
 
-Only the unfiltered global statistics response is cached in Redis. The cache TTL is 60 seconds. Filtered requests bypass the cache. Redis failures do not make PostgreSQL-backed statistics unavailable.
+В Redis кэшируется только общий ответ со статистикой без фильтров. Время жизни записи в кэше — 60 секунд. Запросы с фильтрами обходят кэш. Сбои Redis не делают недоступной статистику, получаемую из PostgreSQL.
 
-### Example requests
+### Примеры запросов
 
-Create a user:
+Создание пользователя:
 
-```bash
+~~~bash
 curl -X POST http://localhost:5050/api/v1/users \
   -H "Content-Type: application/json" \
   -d '{"full_name":"Ada Lovelace","phone_number":"+79998887766"}'
-```
+~~~
 
-Create a task:
+Создание задачи:
 
-```bash
+~~~bash
 curl -X POST http://localhost:5050/api/v1/tasks \
   -H "Content-Type: application/json" \
   -d '{"title":"Prepare project demo","description":"Review the architecture","author_user_id":1}'
-```
+~~~
 
-Read task history:
+Получение истории задачи:
 
-```bash
+~~~bash
 curl "http://localhost:5050/api/v1/tasks/1/activity?limit=20&offset=0"
-```
+~~~
 
-Get statistics:
+Получение статистики:
 
-```bash
+~~~bash
 curl "http://localhost:5050/api/v1/statistics?user_id=1&from=2026-01-01&to=2026-12-31"
-```
+~~~
 
-## Technology stack
+## Технологический стек
 
-| Area | Technology |
+| Область | Технология |
 |---|---|
-| Language | Go 1.26.0 |
-| HTTP API | Go `net/http`, custom routing and middleware |
-| API documentation | Swagger / Swaggo |
-| Primary database | PostgreSQL 18.1 |
-| PostgreSQL driver and pool | pgx v5 |
-| Cache | Redis 8.2.11, `go-redis/v9` |
-| Messaging | Apache Kafka 4.4.0 |
-| Kafka Go client | `confluent-kafka-go/v2` (librdkafka) |
-| Logging | Uber Zap |
-| Metrics and traces | OpenTelemetry |
-| Metrics storage | Prometheus |
-| Distributed tracing storage | Grafana Tempo |
-| Log storage and collection | Grafana Loki and Grafana Alloy |
-| Visualization | Grafana |
-| Local infrastructure | Docker Compose |
-| Database migrations | golang-migrate |
+| Язык | Go 1.26.0 |
+| HTTP API | Go <code>net/http</code>, собственная маршрутизация и middleware |
+| Документация API | Swagger / Swaggo |
+| Основная база данных | PostgreSQL 18.1 |
+| Драйвер и пул соединений PostgreSQL | pgx v5 |
+| Кэш | Redis 8.2.11, <code>go-redis/v9</code> |
+| Брокер сообщений | Apache Kafka 4.4.0 |
+| Go-клиент Kafka | <code>confluent-kafka-go/v2</code> (librdkafka) |
+| Логирование | Uber Zap |
+| Метрики и трассировки | OpenTelemetry |
+| Хранилище метрик | Prometheus |
+| Хранилище распределённых трассировок | Grafana Tempo |
+| Хранилище и сбор логов | Grafana Loki и Grafana Alloy |
+| Визуализация | Grafana |
+| Локальная инфраструктура | Docker Compose |
+| Миграции базы данных | golang-migrate |
 
-The Confluent Kafka Go client uses CGO. A working C toolchain is therefore required for native local builds. The application Dockerfiles install the build dependencies and produce separate images for the API and Worker.
+Go-клиент Confluent для Kafka использует CGO. Поэтому для локальной нативной сборки необходима рабочая C toolchain. Dockerfile приложения устанавливают необходимые зависимости для сборки и создают отдельные образы для API и Worker.
 
-## Observability
+## Наблюдаемость
 
-The observability stack is configured under `monitoring/`.
+Конфигурация стека наблюдаемости находится в каталоге <code>monitoring/</code>.
 
-### Application telemetry
+### Телеметрия приложения
 
-Both `todoapp` and `activity-worker` initialize OpenTelemetry SDK providers. The Go processes export telemetry using OTLP HTTP to the OpenTelemetry Collector.
+Оба приложения — <code>todoapp</code> и <code>activity-worker</code> — инициализируют провайдеры OpenTelemetry SDK. Go-процессы отправляют телеметрию по OTLP HTTP в OpenTelemetry Collector.
 
-- Metrics are exposed by the Collector's Prometheus exporter and scraped by Prometheus.
-- Traces are forwarded by the Collector to Tempo.
-- Application log files are read by Grafana Alloy and sent to Loki.
+- Метрики доступны через Prometheus exporter Collector и собираются Prometheus.
+- Collector передаёт трассировки в Tempo.
+- Файлы логов приложения читает Grafana Alloy и отправляет их в Loki.
 
-### Kafka telemetry
+### Телеметрия Kafka
 
-Kafka broker metrics are collected by the JMX Prometheus Java Agent attached to each broker. A separate Kafka Exporter exposes topic, partition, consumer group, offset, and lag information.
+Метрики брокеров Kafka собираются с помощью JMX Prometheus Java Agent, подключённого к каждому брокеру. Отдельный Kafka Exporter предоставляет информацию о топиках, партициях, Consumer Groups, offset и lag.
 
-Prometheus scrapes:
+Prometheus собирает метрики со следующих целей:
 
 | Job | Target |
 |---|---|
-| `otel-collector` | `otel-collector:8889` |
-| `kafka-brokers` | `kafka-1:9404`, `kafka-2:9404`, `kafka-3:9404` |
-| `kafka-exporter` | `kafka-exporter:9308` |
+| <code>otel-collector</code> | <code>otel-collector:8889</code> |
+| <code>kafka-brokers</code> | <code>kafka-1:9404</code>, <code>kafka-2:9404</code>, <code>kafka-3:9404</code> |
+| <code>kafka-exporter</code> | <code>kafka-exporter:9308</code> |
 
-### Application Kafka metrics
+### Метрики Kafka на уровне приложения
 
-The main application metrics include:
+Основные метрики приложения:
 
-| Metric | Type | Meaning |
+| Метрика | Тип | Значение |
 |---|---|---|
-| `outbox_pending_events` | Gauge | Outbox rows not marked as published |
-| `outbox_oldest_event_age_seconds` | Gauge | Age of the oldest unpublished Outbox row |
-| `outbox_published_total` | Counter | Kafka-acknowledged Outbox publications |
-| `outbox_publish_errors_total` | Counter | Event serialization/publication failures |
-| `activity_events_processed_total` | Counter | Activity deliveries successfully persisted/confirmed |
-| `activity_events_duplicate_total` | Counter | Successfully confirmed duplicate deliveries |
-| `activity_events_failed_total` | Counter | Permanent processing failures successfully routed to the DLQ |
-| `activity_dlq_messages_total` | Counter | Messages successfully published to the DLQ |
-| `activity_processing_duration_seconds` | Histogram | Processing duration, including retries and offset commit |
+| <code>outbox_pending_events</code> | Gauge | Количество записей Outbox, не помеченных как опубликованные |
+| <code>outbox_oldest_event_age_seconds</code> | Gauge | Возраст самой старой неопубликованной записи Outbox |
+| <code>outbox_published_total</code> | Counter | Количество публикаций Outbox, подтверждённых Kafka |
+| <code>outbox_publish_errors_total</code> | Counter | Количество ошибок сериализации или публикации событий |
+| <code>activity_events_processed_total</code> | Counter | Количество успешно сохранённых или подтверждённых доставок Activity |
+| <code>activity_events_duplicate_total</code> | Counter | Количество успешно подтверждённых повторных доставок |
+| <code>activity_events_failed_total</code> | Counter | Количество окончательных ошибок обработки, после которых сообщение успешно отправлено в DLQ |
+| <code>activity_dlq_messages_total</code> | Counter | Количество сообщений, успешно опубликованных в DLQ |
+| <code>activity_processing_duration_seconds</code> | Histogram | Длительность обработки, включая повторные попытки и фиксацию offset |
 
-The counters can be separated by the `event_type` attribute. Processing duration also includes an `outcome` attribute.
+Для счётчиков доступна детализация по атрибуту <code>event_type</code>. Гистограмма длительности обработки также содержит атрибут <code>outcome</code>.
 
-The Outbox gauges are collected through a callback that queries the Outbox Repository. They represent the current database state, not a cumulative count.
+Метрики Outbox собираются через callback, который выполняет запрос к Outbox Repository. Они отражают текущее состояние базы данных, а не накопительное количество событий.
 
-### Accessing the monitoring tools
+### Доступ к инструментам мониторинга
 
-| Tool | Local URL |
+| Инструмент | Локальный URL |
 |---|---|
 | Prometheus | [http://localhost:9090](http://localhost:9090) |
 | Grafana | [http://localhost:3000](http://localhost:3000) |
@@ -393,78 +393,78 @@ The Outbox gauges are collected through a callback that queries the Outbox Repos
 | Loki | [http://localhost:3100](http://localhost:3100) |
 | Kafka UI | [http://localhost:8080](http://localhost:8080) |
 
-Grafana provisions Prometheus, Tempo, and Loki data sources from `monitoring/grafana/provisioning/datasources`. Monitoring configuration, dashboards, and exporter rules are kept in the repository under `monitoring/`.
+Grafana автоматически настраивает источники данных Prometheus, Tempo и Loki из каталога <code>monitoring/grafana/provisioning/datasources</code>. Конфигурация мониторинга, дашборды и правила exporter хранятся в репозитории в каталоге <code>monitoring/</code>.
 
-The Make target below starts the observability services in dependency order:
+Следующая команда запускает сервисы наблюдаемости с учётом порядка зависимостей:
 
-```bash
+~~~bash
 make observability-up
-```
+~~~
 
-## Run locally
+## Локальный запуск
 
-### Prerequisites
+### Предварительные требования
 
-- Go 1.26.0
-- Docker Engine or Docker Desktop with the Docker Compose plugin
-- GNU Make and a Bash-compatible shell (Git Bash or WSL on Windows)
-- A C compiler/toolchain for native builds of `confluent-kafka-go`
+- Go 1.26.0.
+- Docker Engine или Docker Desktop с плагином Docker Compose.
+- GNU Make и Bash-совместимая оболочка (Git Bash или WSL в Windows).
+- C-компилятор и toolchain для нативной сборки <code>confluent-kafka-go</code>.
 
-### 1. Configure the environment
+### 1. Настройка окружения
 
-Clone the repository and create the local environment file:
+Клонируйте репозиторий и создайте локальный файл окружения:
 
-```bash
+~~~bash
 git clone https://github.com/Reigor1/20h-project.git
 cd 20h-project
 cp .env.example .env
-```
+~~~
 
-Edit `.env` before starting the stack. In particular, set non-placeholder values for the PostgreSQL, Redis, and Grafana credentials. Do not commit `.env` or real credentials.
+Перед запуском стека отредактируйте <code>.env</code>. В частности, задайте непустые значения вместо шаблонных для учётных данных PostgreSQL, Redis и Grafana. Не добавляйте <code>.env</code> и реальные учётные данные в Git.
 
-The Makefile includes `.env` and exports its variables. Create this file before running Make targets.
+Makefile подключает <code>.env</code> и экспортирует его переменные. Создайте этот файл до запуска целей Make.
 
-### 2. Start PostgreSQL and apply migrations
+### 2. Запуск PostgreSQL и применение миграций
 
-```bash
+~~~bash
 make env-postgres-up
 make migrate-up
-```
+~~~
 
-The migrations create the `todoapp` schema and the `users`, `tasks`, `outbox`, and `task_activity` tables.
+Миграции создают схему <code>todoapp</code> и таблицы <code>users</code>, <code>tasks</code>, <code>outbox</code> и <code>task_activity</code>.
 
-### 3. Start the application stack
+### 3. Запуск стека приложения
 
-For a local Go API process with infrastructure and Activity Workers in Docker:
+Чтобы запустить Go API локально, а инфраструктуру и Activity Worker — в Docker:
 
-```bash
+~~~bash
 make todoapp-run-locally
-```
+~~~
 
-This target starts Redis, PostgreSQL port forwarding, observability services, the Kafka cluster, application topics, Kafka UI, and the configured Activity Worker replicas. It then runs `cmd/todoapp` on the host.
+Эта цель запускает Redis, PostgreSQL с пробросом порта, сервисы наблюдаемости, кластер Kafka, топики приложения, Kafka UI и заданное количество реплик Activity Worker. После этого она запускает <code>cmd/todoapp</code> на хостовой машине.
 
-The database migrations are a separate step and must be applied before starting the application.
+Миграции базы данных выполняются отдельно и должны быть применены до запуска приложения.
 
-## Run with Docker Compose
+## Запуск через Docker Compose
 
-After creating and configuring `.env`, start PostgreSQL and apply the migrations:
+После создания и настройки <code>.env</code> запустите PostgreSQL и примените миграции:
 
-```bash
+~~~bash
 make env-postgres-up
 make migrate-up
-```
+~~~
 
-Then start the API and supporting services in Docker:
+Затем запустите API и вспомогательные сервисы в Docker:
 
-```bash
+~~~bash
 make todoapp-run-in-docker
-```
+~~~
 
-The API is exposed on port `5050`. Within the Compose network, services use Docker service names such as `todoapp-postgres`, `redis`, `kafka-1`, and `otel-collector`.
+API доступно на порту <code>5050</code>. Внутри сети Compose сервисы обращаются друг к другу по именам Docker-сервисов, например <code>todoapp-postgres</code>, <code>redis</code>, <code>kafka-1</code> и <code>otel-collector</code>.
 
-### Useful service commands
+### Полезные команды для управления сервисами
 
-```bash
+~~~bash
 make kafka-status
 make kafka-topics
 make kafka-topics-describe
@@ -472,170 +472,170 @@ make activity-workers-up
 make activity-workers-down
 make observability-up
 make observability-down
-```
+~~~
 
-The three Kafka brokers expose host ports `29092`, `39092`, and `49092`. The API and monitoring interfaces are intended for local development.
+Три брокера Kafka публикуют на хосте порты <code>29092</code>, <code>39092</code> и <code>49092</code>. API и интерфейсы мониторинга предназначены для локальной разработки.
 
-## Configuration
+## Конфигурация
 
-The complete set of development variables and their defaults is documented in `.env.example`. The most important groups are:
+Полный перечень переменных окружения и их значений по умолчанию приведён в <code>.env.example</code>. Основные группы:
 
-| Prefix / variable | Purpose |
+| Префикс / переменная | Назначение |
 |---|---|
-| `HTTP_*`, `TIME_ZONE` | HTTP server and application time zone |
-| `POSTGRES_*` | PostgreSQL connection and operation timeout |
-| `REDIS_*` | Redis connection |
-| `KAFKA_*` | Kafka bootstrap servers and Producer settings |
-| `OUTBOX_PUBLISHER_*` | Outbox topic, polling, batch, lease, retry, and shutdown settings |
-| `KAFKA_CONSUMER_*` | Consumer Group, source/DLQ topics, retry, pending queue, and shutdown settings |
-| `LOGGER_*` | Application log configuration |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector endpoint |
-| `SERVICE_VERSION`, `DEPLOYMENT_ENVIRONMENT` | Telemetry resource attributes |
-| `GRAFANA_*` | Grafana credentials and optional SMTP configuration |
+| <code>HTTP_*</code>, <code>TIME_ZONE</code> | HTTP-сервер и часовой пояс приложения |
+| <code>POSTGRES_*</code> | Подключение к PostgreSQL и таймауты операций |
+| <code>REDIS_*</code> | Подключение к Redis |
+| <code>KAFKA_*</code> | Адреса Kafka bootstrap servers и настройки Producer |
+| <code>OUTBOX_PUBLISHER_*</code> | Топик Outbox, polling, размер пакета, lease, повторные попытки и настройки завершения работы |
+| <code>KAFKA_CONSUMER_*</code> | Consumer Group, исходный топик и DLQ, повторные попытки, очередь ожидающих сообщений и настройки завершения работы |
+| <code>LOGGER_*</code> | Настройки логирования приложения |
+| <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> | Endpoint OpenTelemetry Collector |
+| <code>SERVICE_VERSION</code>, <code>DEPLOYMENT_ENVIRONMENT</code> | Атрибуты ресурсов телеметрии |
+| <code>GRAFANA_*</code> | Учётные данные Grafana и необязательная конфигурация SMTP |
 
-For the API running on the host, `POSTGRES_HOST=localhost` and the Kafka bootstrap servers use the host ports. Docker Compose overrides service addresses with the internal Docker network addresses.
+Для API, запущенного на хостовой машине, используется <code>POSTGRES_HOST=localhost</code>, а Kafka bootstrap servers указывают на порты хоста. Docker Compose переопределяет адреса сервисов на внутренние адреса Docker-сети.
 
-Test database settings are kept separately in `.env.test.example`.
+Настройки тестовой базы данных хранятся отдельно в <code>.env.test.example</code>.
 
-## Testing
+## Тестирование
 
-The repository contains unit tests, PostgreSQL integration tests, API end-to-end tests, and dedicated observability/load scenarios.
+В репозитории есть unit-тесты, интеграционные тесты PostgreSQL, E2E-тесты API, а также отдельные сценарии наблюдаемости и нагрузочного тестирования.
 
-### Unit tests
+### Unit-тесты
 
-```bash
+~~~bash
 go test ./internal/...
-```
+~~~
 
-### Integration tests
+### Интеграционные тесты
 
-Create the test environment file:
+Создайте файл тестового окружения:
 
-```bash
+~~~bash
 cp .env.test.example .env.test
-```
+~~~
 
-Run the integration suites:
+Запустите интеграционные наборы тестов:
 
-```bash
+~~~bash
 make tests-integration
-```
+~~~
 
-The integration targets start a dedicated PostgreSQL test container, run the selected test suite, and remove the test container afterwards.
+Цели интеграционного тестирования запускают отдельный тестовый контейнер PostgreSQL, выполняют выбранный набор тестов, а затем удаляют тестовый контейнер.
 
-### API end-to-end tests
+### End-to-end тесты API
 
-```bash
+~~~bash
 make tests-e2e
-```
+~~~
 
-The API E2E target starts the isolated test database, applies the migrations, runs the API test suite, and removes the test container.
+Цель E2E-тестирования API запускает изолированную тестовую базу данных, применяет миграции, выполняет набор тестов API и удаляет тестовый контейнер.
 
-### Observability scenario
+### Сценарий проверки наблюдаемости
 
-The observability generator requires a running API. It creates test fixtures, exercises routes and workload scenarios, generates HTTP 5xx responses, and cleans up its fixtures afterwards.
+Генератор сценария наблюдаемости требует запущенного API. Он создаёт тестовые данные, выполняет запросы к маршрутам и сценарии нагрузки, генерирует HTTP-ответы 5xx, а затем удаляет созданные им данные.
 
-```bash
+~~~bash
 make test-observability
-```
+~~~
 
-### Load tests
+### Нагрузочное тестирование
 
-Load tests also require an already running API:
+Для нагрузочных тестов также требуется уже запущенное API:
 
-```bash
+~~~bash
 make test-load PROFILE=standard
 make test-load PROFILE=ramp-up
 make test-load PROFILE=steady-state
 make test-load PROFILE=stress
 make test-load PROFILE=all
-```
+~~~
 
-Available parameters include `STAGE_DURATION`, `STEADY_WORKERS`, `STEADY_DURATION`, `STRESS_WORKERS`, `USERS`, and `TASKS_PER_USER`.
+Доступные параметры включают <code>STAGE_DURATION</code>, <code>STEADY_WORKERS</code>, <code>STEADY_DURATION</code>, <code>STRESS_WORKERS</code>, <code>USERS</code> и <code>TASKS_PER_USER</code>.
 
-JSON reports are written to `out/load-tests` by default.
+По умолчанию JSON-отчёты сохраняются в <code>out/load-tests</code>.
 
-### Static checks and builds
+### Статические проверки и сборка
 
-```bash
+~~~bash
 go vet ./...
 go build ./cmd/todoapp
 go build ./cmd/activity-worker
 go build ./cmd/activity-dlq-replay
-```
+~~~
 
-## Useful Make targets
+## Полезные команды Make
 
-| Target | Purpose |
+| Цель | Назначение |
 |---|---|
-| `env-postgres-up` / `env-postgres-down` | Start or stop PostgreSQL |
-| `env-redis-up` / `env-redis-down` | Start or stop Redis |
-| `migrate-up` / `migrate-down` | Apply or roll back database migrations |
-| `kafka-up` / `kafka-down` | Start or stop the Kafka cluster |
-| `kafka-status` | Show broker and KRaft quorum status |
-| `kafka-topics-setup` | Create topics and enforce their configuration |
-| `kafka-topics-describe` | Show partition, replica, leader, and ISR information |
-| `kafka-ui-up` / `kafka-ui-down` | Start or stop Kafka UI |
-| `activity-workers-up` / `activity-workers-down` | Start or stop Activity Worker replicas |
-| `todoapp-run-locally` | Start dependencies and run the API on the host |
-| `todoapp-run-in-docker` | Start the application stack in Docker |
-| `observability-up` / `observability-down` | Start or stop the monitoring stack |
-| `tests-integration` | Run PostgreSQL and infrastructure integration tests |
-| `tests-e2e` | Run API end-to-end tests |
-| `test-observability` | Run the observability scenario |
-| `test-load` | Run a selected load profile |
-| `activity-dlq-replay` | Replay a selected DLQ message |
+| <code>env-postgres-up</code> / <code>env-postgres-down</code> | Запустить или остановить PostgreSQL |
+| <code>env-redis-up</code> / <code>env-redis-down</code> | Запустить или остановить Redis |
+| <code>migrate-up</code> / <code>migrate-down</code> | Применить или откатить миграции базы данных |
+| <code>kafka-up</code> / <code>kafka-down</code> | Запустить или остановить кластер Kafka |
+| <code>kafka-status</code> | Показать состояние брокеров и кворума KRaft |
+| <code>kafka-topics-setup</code> | Создать топики и применить их конфигурацию |
+| <code>kafka-topics-describe</code> | Показать информацию о партициях, репликах, лидерах и ISR |
+| <code>kafka-ui-up</code> / <code>kafka-ui-down</code> | Запустить или остановить Kafka UI |
+| <code>activity-workers-up</code> / <code>activity-workers-down</code> | Запустить или остановить реплики Activity Worker |
+| <code>todoapp-run-locally</code> | Запустить зависимости и API на хостовой машине |
+| <code>todoapp-run-in-docker</code> | Запустить стек приложения в Docker |
+| <code>observability-up</code> / <code>observability-down</code> | Запустить или остановить стек мониторинга |
+| <code>tests-integration</code> | Запустить интеграционные тесты PostgreSQL и инфраструктуры |
+| <code>tests-e2e</code> | Запустить end-to-end тесты API |
+| <code>test-observability</code> | Запустить сценарий проверки наблюдаемости |
+| <code>test-load</code> | Запустить выбранный профиль нагрузочного тестирования |
+| <code>activity-dlq-replay</code> | Повторно опубликовать выбранное сообщение из DLQ |
 
-## Repository structure
+## Структура репозитория
 
-```text
+~~~text
 .
 ├── cmd/
-│   ├── todoapp/                 # HTTP API and Outbox Publisher entry point
-│   ├── activity-worker/         # Kafka Activity Worker entry point
-│   └── activity-dlq-replay/    # DLQ replay utility
-├── docs/                        # Generated Swagger specification
+│   ├── todoapp/                 # Точка входа HTTP API и Outbox Publisher
+│   ├── activity-worker/         # Точка входа Kafka Activity Worker
+│   └── activity-dlq-replay/     # Утилита повторной публикации из DLQ
+├── docs/                        # Сгенерированная спецификация Swagger
 ├── internal/
 │   ├── core/
-│   │   ├── domain/              # Domain models and invariants
-│   │   ├── events/              # Event envelope and task event constructors
-│   │   ├── kafka/                # Kafka Producer and Consumer adapters
-│   │   ├── observability/        # OpenTelemetry setup and metrics
-│   │   ├── repository/           # PostgreSQL and Redis infrastructure
-│   │   └── transport/http/       # HTTP server, middleware, request/response helpers
+│   │   ├── domain/              # Доменные модели и инварианты
+│   │   ├── events/              # Конверт события и конструкторы событий задач
+│   │   ├── kafka/               # Адаптеры Kafka Producer и Consumer
+│   │   ├── observability/       # Настройка OpenTelemetry и метрики
+│   │   ├── repository/          # Инфраструктура PostgreSQL и Redis
+│   │   └── transport/http/     # HTTP-сервер, middleware и обработка запросов/ответов
 │   └── features/
-│       ├── users/                # User feature
-│       ├── tasks/                # Task feature and Outbox event creation
-│       ├── outbox/               # Outbox Repository and Publisher
-│       ├── activity/             # Activity Worker, DLQ, Repository, Service, HTTP
-│       └── statistics/           # Statistics, PostgreSQL repository, Redis cache
-├── migrations/                  # Sequential up/down SQL migrations
+│       ├── users/               # Функциональность пользователей
+│       ├── tasks/               # Функциональность задач и создание событий Outbox
+│       ├── outbox/              # Outbox Repository и Publisher
+│       ├── activity/            # Activity Worker, DLQ, Repository, Service и HTTP
+│       └── statistics/          # Статистика, PostgreSQL Repository и кэш Redis
+├── migrations/                  # Последовательные SQL-миграции up/down
 ├── monitoring/
-│   ├── alloy/                   # Log collection
-│   ├── grafana/                 # Data source provisioning and dashboards
-│   ├── kafka/                   # JMX Exporter image and rules
+│   ├── alloy/                   # Сбор логов
+│   ├── grafana/                 # Настройка источников данных и дашборды
+│   ├── kafka/                   # Образ JMX Exporter и правила сбора метрик
 │   ├── loki/
 │   ├── otel-collector/
 │   ├── prometheus/
 │   └── tempo/
 ├── tests/
-│   ├── integration/             # PostgreSQL and infrastructure integration tests
-│   └── e2e/                     # API E2E and observability/load scenarios
-├── docker-compose.yaml          # Local application and infrastructure stack
-├── docker-compose.test.yaml     # Isolated PostgreSQL test service
-├── Makefile                     # Development, infrastructure, and test commands
+│   ├── integration/             # Интеграционные тесты PostgreSQL и инфраструктуры
+│   └── e2e/                     # E2E-тесты API и сценарии наблюдаемости/нагрузки
+├── docker-compose.yaml          # Локальный стек приложения и инфраструктуры
+├── docker-compose.test.yaml     # Изолированный тестовый сервис PostgreSQL
+├── Makefile                     # Команды разработки, инфраструктуры и тестирования
 └── go.mod
-```
+~~~
 
-## Current scope and limitations
+## Текущий объём проекта и ограничения
 
-- The local Kafka listeners use PLAINTEXT and the Compose stack is configured for development. Authentication, TLS, secrets management, and production deployment policies are outside the current scope.
-- The delivery contract is at-least-once. The design relies on idempotent Activity persistence; it does not claim end-to-end exactly-once processing.
-- The Activity Worker retries transient processing and commit failures with bounded exponential backoff delays. Permanently invalid event envelopes are routed to the DLQ.
-- Redis is an optional cache, not a source of truth. Statistics remain available from PostgreSQL when the cache is unavailable.
-- The API currently exposes CRUD operations without an authentication/authorization layer. It should not be exposed as a public service without adding the required security controls.
-- Grafana dashboards and alert rules can evolve independently from application instrumentation. The telemetry pipeline and data sources are provisioned in the repository; dashboard-specific analysis is a separate layer.
+- Локальные Kafka listeners используют PLAINTEXT, а конфигурация Compose предназначена для разработки. Аутентификация, TLS, управление секретами и политики production-развёртывания не входят в текущий объём проекта.
+- Семантика доставки — at-least-once. Архитектура опирается на идемпотентное сохранение Activity и не заявляет сквозную обработку exactly-once.
+- Activity Worker повторяет обработку временных ошибок и ошибки фиксации offset с ограниченной экспоненциальной задержкой. Конверты событий с постоянными ошибками направляются в DLQ.
+- Redis является необязательным кэшем, а не источником истины. При недоступности кэша статистика продолжает поступать из PostgreSQL.
+- В API пока есть CRUD-операции без слоя аутентификации и авторизации. Перед предоставлением публичного доступа необходимо добавить соответствующие механизмы безопасности.
+- Дашборды Grafana и правила оповещений могут развиваться независимо от инструментирования приложения. Конвейер телеметрии и источники данных конфигурируются в репозитории; анализ на уровне конкретных дашбордов является отдельным слоем.
 
-## License
+## Лицензия
 
-No license file is currently defined in the repository. Contact the repository owner before reusing the project or its code.
+В репозитории пока нет файла лицензии. Перед повторным использованием проекта или его кода свяжитесь с владельцем репозитория.
