@@ -1,4 +1,3 @@
-
 CREATE TABLE todoapp.outbox (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
@@ -12,6 +11,9 @@ CREATE TABLE todoapp.outbox (
 
     occurred_at TIMESTAMPTZ NOT NULL,
     payload JSONB NOT NULL,
+
+    traceparent TEXT NOT NULL DEFAULT '',
+    tracestate TEXT NOT NULL DEFAULT '',
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     published_at TIMESTAMPTZ,
