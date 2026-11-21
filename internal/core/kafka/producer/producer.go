@@ -9,6 +9,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
+// Message contains the payload and optional routing metadata for a Kafka record.
 type Message struct {
 	Key       []byte
 	Value     []byte
@@ -16,6 +17,7 @@ type Message struct {
 	Headers   []kafka.Header
 }
 
+// Producer wraps librdkafka and owns its delivery-event watcher and shutdown lifecycle.
 type Producer struct {
 	client *kafka.Producer
 
@@ -28,6 +30,8 @@ type Producer struct {
 	closeErr  error
 }
 
+// NewProducer creates a Kafka Producer configured for acknowledged, idempotent delivery
+// and starts a goroutine that forwards asynchronous client errors to onError.
 func NewProducer(
 	config Config,
 	onError func(error),
@@ -72,6 +76,8 @@ func NewProducer(
 	return producer, nil
 }
 
+// watchEvents consumes producer-level events until shutdown and forwards Kafka errors
+// to the optional callback. Per-message delivery reports use their own channels.
 func (p *Producer) watchEvents() {
 	defer close(p.eventsDone)
 
@@ -190,6 +196,7 @@ func (p *Producer) PublishBatch(
 	return results
 }
 
+// Publish sends one message and returns its delivery result, using PublishBatch internally.
 func (p *Producer) Publish(
 	ctx context.Context,
 	topic string,
@@ -215,6 +222,8 @@ func (p *Producer) Publish(
 	return nil
 }
 
+// Close flushes queued messages up to timeout, stops the event watcher, and closes the client.
+// It is safe to call more than once; a non-zero Flush remainder is returned as an error.
 func (p *Producer) Close(timeout time.Duration) error {
 	if p == nil || p.client == nil {
 		return nil
