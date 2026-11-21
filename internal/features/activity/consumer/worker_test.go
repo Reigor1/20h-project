@@ -17,6 +17,8 @@ import (
 	"go.uber.org/zap"
 )
 
+// fakeConsumer provides controllable polling, assignment, pause, resume, and commit behavior
+// for Activity Worker tests.
 type fakeConsumer struct {
 	sequence *[]string
 	results  []kafka_consumer.PollResult
@@ -31,10 +33,12 @@ type fakeConsumer struct {
 	loseAssignmentOnPoll bool
 }
 
+// Subscribe records the topic subscription requested by the Worker.
 func (c *fakeConsumer) Subscribe(string) error {
 	return nil
 }
 
+// Poll returns queued test records and simulates Kafka polling during processing and retry.
 func (c *fakeConsumer) Poll(time.Duration) kafka_consumer.PollResult {
 	c.polls++
 	if c.loseAssignmentOnPoll {
@@ -52,6 +56,7 @@ func (c *fakeConsumer) Poll(time.Duration) kafka_consumer.PollResult {
 	return result
 }
 
+// CommitMessage records commit attempts and returns configured test outcomes.
 func (c *fakeConsumer) CommitMessage(
 	_ *kafka_consumer.Message,
 ) error {
@@ -71,28 +76,33 @@ func (c *fakeConsumer) CommitMessage(
 	return nil
 }
 
+// IsAssigned reports whether the test consumer still owns the message partition.
 func (c *fakeConsumer) IsAssigned(
 	_ *kafka_consumer.Message,
 ) bool {
 	return !c.assignmentLost
 }
 
+// Pause records that the Worker temporarily stopped fetching new messages.
 func (c *fakeConsumer) Pause() error {
 	c.paused++
 	return nil
 }
 
+// Resume records that the Worker resumed fetching after retry backoff.
 func (c *fakeConsumer) Resume() error {
 	c.resumed++
 	return nil
 }
 
+// fakeProducer captures DLQ publications and supplies configurable publish results.
 type fakeProducer struct {
 	sequence  *[]string
 	errors    []error
 	published [][]byte
 }
 
+// Publish records the message sent to the dead-letter topic.
 func (p *fakeProducer) Publish(
 	_ context.Context,
 	_ string,
@@ -114,6 +124,7 @@ func (p *fakeProducer) Publish(
 	return err
 }
 
+// fakeActivityService simulates Activity persistence, including retries and duplicate events.
 type fakeActivityService struct {
 	sequence  *[]string
 	errors    []error
@@ -123,6 +134,7 @@ type fakeActivityService struct {
 	waitForContextDone bool
 }
 
+// Record returns the configured persistence result and records each processing attempt.
 func (s *fakeActivityService) Record(
 	ctx context.Context,
 	_ core_events.Envelope,
@@ -152,6 +164,7 @@ func (s *fakeActivityService) Record(
 	return false, err
 }
 
+// newTestWorker wires a Worker to controllable Kafka and Activity service fakes.
 func newTestWorker(
 	t *testing.T,
 	consumer *fakeConsumer,
@@ -179,6 +192,7 @@ func newTestWorker(
 	return worker
 }
 
+// newTestEventMessage creates a Kafka record containing a valid task event envelope.
 func newTestEventMessage(t *testing.T) *kafka_consumer.Message {
 	t.Helper()
 
@@ -207,6 +221,7 @@ func newTestEventMessage(t *testing.T) *kafka_consumer.Message {
 	}
 }
 
+// TestProcessMessageRetriesPostgresBeforeCommit verifies database retry succeeds before offset commit.
 func TestProcessMessageRetriesPostgresBeforeCommit(t *testing.T) {
 	var sequence []string
 
@@ -267,6 +282,7 @@ func TestProcessMessageRetriesPostgresBeforeCommit(t *testing.T) {
 	}
 }
 
+// TestProcessMessagePublishesDLQBeforeCommit verifies invalid events reach the DLQ before source commit.
 func TestProcessMessagePublishesDLQBeforeCommit(t *testing.T) {
 	var sequence []string
 
@@ -342,6 +358,7 @@ func TestProcessMessagePublishesDLQBeforeCommit(t *testing.T) {
 	}
 }
 
+// TestProcessMessageRetriesDLQPublishBeforeCommit checks DLQ delivery retries before committing the source offset.
 func TestProcessMessageRetriesDLQPublishBeforeCommit(t *testing.T) {
 	var sequence []string
 
@@ -399,6 +416,7 @@ func TestProcessMessageRetriesDLQPublishBeforeCommit(t *testing.T) {
 	}
 }
 
+// TestProcessMessageDoesNotCommitWhenContextCancelled verifies cancellation leaves the source record uncommitted.
 func TestProcessMessageDoesNotCommitWhenContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -434,6 +452,7 @@ func TestProcessMessageDoesNotCommitWhenContextCancelled(t *testing.T) {
 	}
 }
 
+// TestProcessMessageKeepsFetchedMessagesDuringRetry checks that polling during backoff does not lose fetched records.
 func TestProcessMessageKeepsFetchedMessagesDuringRetry(t *testing.T) {
 	firstMessage := newTestEventMessage(t)
 	secondMessage := newTestEventMessage(t)
@@ -485,6 +504,7 @@ func TestProcessMessageKeepsFetchedMessagesDuringRetry(t *testing.T) {
 	}
 }
 
+// TestProcessMessageMovesPermanentErrorsToDLQ verifies non-retryable event errors are routed to the DLQ.
 func TestProcessMessageMovesPermanentErrorsToDLQ(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -569,6 +589,7 @@ func TestProcessMessageMovesPermanentErrorsToDLQ(t *testing.T) {
 	}
 }
 
+// TestRetryDelay verifies the Worker retry backoff grows exponentially and respects its cap.
 func TestRetryDelay(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -603,6 +624,7 @@ func TestRetryDelay(t *testing.T) {
 	}
 }
 
+// TestProcessMessageRetriesCommit verifies Kafka offset commit failures are retried.
 func TestProcessMessageRetriesCommit(t *testing.T) {
 	consumer := &fakeConsumer{
 		commitErrors: []error{
@@ -646,6 +668,7 @@ func TestProcessMessageRetriesCommit(t *testing.T) {
 	}
 }
 
+// TestProcessMessageStopsRetryAfterAssignmentLoss checks processing stops when partition ownership is revoked.
 func TestProcessMessageStopsRetryAfterAssignmentLoss(t *testing.T) {
 	consumer := &fakeConsumer{
 		loseAssignmentOnPoll: true,
@@ -688,6 +711,7 @@ func TestProcessMessageStopsRetryAfterAssignmentLoss(t *testing.T) {
 	}
 }
 
+// TestProcessMessageStopsWhenPendingQueueIsFull verifies bounded buffering prevents unbounded message accumulation.
 func TestProcessMessageStopsWhenPendingQueueIsFull(t *testing.T) {
 	firstMessage := newTestEventMessage(t)
 	secondMessage := newTestEventMessage(t)
@@ -741,6 +765,7 @@ func TestProcessMessageStopsWhenPendingQueueIsFull(t *testing.T) {
 }
 
 
+// TestRunCommitsCurrentMessageAfterShutdownSignal checks graceful shutdown completes an in-flight message.
 func TestRunCommitsCurrentMessageAfterShutdownSignal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -775,6 +800,7 @@ func TestRunCommitsCurrentMessageAfterShutdownSignal(t *testing.T) {
 	}
 }
 
+// TestRunDoesNotCommitWhenCurrentMessageFailsDuringShutdown ensures failed work remains eligible for redelivery.
 func TestRunDoesNotCommitWhenCurrentMessageFailsDuringShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -804,6 +830,7 @@ func TestRunDoesNotCommitWhenCurrentMessageFailsDuringShutdown(t *testing.T) {
 	}
 }
 
+// TestRunLeavesMessageUncommittedWhenShutdownGraceExpires verifies the grace deadline does not force an unsafe commit.
 func TestRunLeavesMessageUncommittedWhenShutdownGraceExpires(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -833,6 +860,7 @@ func TestRunLeavesMessageUncommittedWhenShutdownGraceExpires(t *testing.T) {
 	}
 }
 
+// TestProcessMessageRecognizesDuplicateDelivery checks idempotent handling of an event already stored in Activity Log.
 func TestProcessMessageRecognizesDuplicateDelivery(t *testing.T) {
 	consumer := &fakeConsumer{}
 	service := &fakeActivityService{duplicate: true}
