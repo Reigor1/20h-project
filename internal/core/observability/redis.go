@@ -6,6 +6,8 @@ import (
 	redisotel_native "github.com/redis/go-redis/extra/redisotel-native/v9"
 )
 
+// InstrumentRedisMetrics enables the supported Redis command, connection, and resiliency metric groups.
+// The instrumentation instance is retained so it can be shut down with Observability.
 func (o *Observability) InstrumentRedisMetrics() error {
 	if o == nil || o.meterProvider == nil {
 		return fmt.Errorf("Redis metrics: meter provider is nil")
