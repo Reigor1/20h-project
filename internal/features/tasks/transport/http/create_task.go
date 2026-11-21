@@ -9,12 +9,14 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 )
 
+// CreateTaskRequest is the JSON body accepted by the task creation endpoint.
 type CreateTaskRequest struct {
 	Title        string  `json:"title" validate:"required,min=1,max=100"         example:"Домашнее задание"`
 	Description  *string `json:"description" validate:"omitempty,min=1,max=1000" example:"Сделать до четверга домашнее задание по математике"`
 	AuthorUserID int     `json:"author_user_id" validate:"required"              example:"1"`
 }
 
+// CreateTaskResponse is the JSON representation returned after a task is created.
 type CreateTaskResponse TaskDTOResponse
 
 // CreateTask   godoc
@@ -29,6 +31,8 @@ type CreateTaskResponse TaskDTOResponse
 // @Failure     404 {object} core_http_response.ErrorResponse "Author not found"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /tasks [post]
+// CreatedTask decodes and validates the request, delegates task creation to the service,
+// and returns the created task with HTTP 201.
 func (h *TasksHTTPHandler) CreatedTask(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)
