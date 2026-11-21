@@ -122,6 +122,7 @@ func TestPostgresPoolIntegration(t *testing.T) {
 	}
 }
 
+// TestNewPoolRejectsInvalidConfiguration verifies the integration behavior represented by its test scenarios.
 func TestNewPoolRejectsInvalidConfiguration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -139,6 +140,7 @@ func TestNewPoolRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
+// dropTestSchema removes test data or schema created by the integration scenario.
 func dropTestSchema(t *testing.T, pool *core_pgx_pool.Pool, schemaName string) {
 	t.Helper()
 
