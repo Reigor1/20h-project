@@ -10,6 +10,7 @@ import (
 	"syscall"
 )
 
+// main loads the observability test configuration and runs the selected test scenario.
 func main() {
 	config, err := loadConfig()
 	if err != nil {
@@ -30,6 +31,7 @@ func main() {
 	}
 }
 
+// run executes the corresponding observability test workflow.
 func run(ctx context.Context, config Config) (runErr error) {
 	client := newAPIClient(config)
 	defer client.httpClient.CloseIdleConnections()
