@@ -11,12 +11,14 @@ import (
 	"testing"
 )
 
+// taskRequest models the JSON fields accepted by task creation and patch endpoints.
 type taskRequest struct {
 	Title        string  `json:"title"`
 	Description  *string `json:"description,omitempty"`
 	AuthorUserID int     `json:"author_user_id"`
 }
 
+// taskResponse models the task representation returned by the API.
 type taskResponse struct {
 	ID           int     `json:"id"`
 	Title        string  `json:"title"`
@@ -25,6 +27,7 @@ type taskResponse struct {
 	AuthorUserID int     `json:"author_user_id"`
 }
 
+// testTasksAPI exercises task creation, retrieval, filtering, patching, completion, and deletion.
 func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 	api := apiClient{
 		httpClient: client,
@@ -474,6 +477,7 @@ func testTasksAPI(t *testing.T, client *http.Client, baseURL string) {
 	})
 }
 
+// registerTaskCleanup schedules deletion of a task created by an end-to-end scenario.
 func registerTaskCleanup(t *testing.T, api apiClient, tasksPath string, taskID int) {
 	t.Helper()
 
