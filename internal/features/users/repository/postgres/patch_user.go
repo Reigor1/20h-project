@@ -10,6 +10,8 @@ import (
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 )
 
+// PatchUser updates user fields only when the stored version matches the supplied version.
+// A missing RETURNING row is reported as a conflict, covering concurrent updates and deletion.
 func (r *UsersRepository) PatchUser(
 	ctx context.Context,
 	id int,
