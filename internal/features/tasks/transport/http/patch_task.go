@@ -11,12 +11,16 @@ import (
 	core_http_types "github.com/Reigor1/20h-project/internal/core/transport/http/types"
 )
 
+// PatchTaskRequest preserves three-state JSON field semantics: omitted, explicit null,
+// or a concrete value. This lets clients clear nullable fields without changing omitted ones.
 type PatchTaskRequest struct {
 	Title       core_http_types.Nullable[string] `json:"title"       swaggertype:"string" example:"Погулять с собакой"`
 	Description core_http_types.Nullable[string] `json:"description" swaggertype:"string" example:"null"`
 	Completed   core_http_types.Nullable[bool]   `json:"completed"   swaggertype:"boolean"`
 }
 
+// Validate enforces transport-level patch constraints while preserving explicit null
+// for nullable Description and rejecting null for required Title and Completed fields.
 func (r *PatchTaskRequest) Validate() error {
 	if r.Title.Set {
 		if r.Title.Value == nil {
@@ -47,6 +51,7 @@ func (r *PatchTaskRequest) Validate() error {
 	return nil
 }
 
+// PatchTaskResponse is the JSON representation returned after a task update.
 type PatchTaskResponse TaskDTOResponse
 
 // PatchTask    godoc
@@ -68,6 +73,8 @@ type PatchTaskResponse TaskDTOResponse
 // @Failure     409 {object} core_http_response.ErrorResponse "Conflict"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /tasks/{id} [patch]
+// PatchTask parses the task ID and partial-update body, delegates the update to the service,
+// and returns the resulting task state.
 func (h *TasksHTTPHandler) PatchTask(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)
@@ -111,6 +118,7 @@ func (h *TasksHTTPHandler) PatchTask(rw http.ResponseWriter, r *http.Request) {
 	responseHandler.JSONResponse(response, http.StatusOK)
 }
 
+// taskPathFromRequest converts transport nullable fields into the domain patch contract.
 func taskPathFromRequest(request PatchTaskRequest) domain.TaskPatch {
 	return domain.NewTaskPatch(
 		request.Title.ToDomain(),
