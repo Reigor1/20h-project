@@ -8,6 +8,7 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// GetUser retrieves one user by ID and propagates the repository's not-found result.
 func (s *UsersService) GetUser(
 	ctx context.Context,
 	id int,
