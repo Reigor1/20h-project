@@ -8,6 +8,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
+// Config contains Kafka Consumer connection, subscription, retry, and shutdown settings.
 type Config struct {
 	BootstrapServers string `envconfig:"BOOTSTRAP_SERVERS" default:"localhost:29092,localhost:39092,localhost:49092"`
 
@@ -23,6 +24,7 @@ type Config struct {
 	ShutdownTimeout    time.Duration `envconfig:"CONSUMER_SHUTDOWN_TIMEOUT" default:"30s"`
 }
 
+// NewConfig loads KAFKA_* Consumer settings from the environment and validates them.
 func NewConfig() (Config, error) {
 	var config Config
 
@@ -37,6 +39,8 @@ func NewConfig() (Config, error) {
 	return config, nil
 }
 
+// Validate checks that the Consumer has usable broker, group, topic, offset-reset,
+// retry, queue, and shutdown settings. The source and DLQ topics must differ.
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.BootstrapServers) == "" {
 		return fmt.Errorf("Kafka bootstrap servers must not be empty")
