@@ -13,6 +13,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
+// HTTPServer owns the root ServeMux, global middleware, API routers, and HTTP lifecycle.
 type HTTPServer struct {
 	mux    *http.ServeMux
 	config Config
@@ -22,6 +23,7 @@ type HTTPServer struct {
 	apiRouteInstrumenter APIRouteInstrumenter
 }
 
+// NewHTTPServer creates the root HTTP server with its listen configuration and middleware.
 func NewHTTPServer(
 	config Config,
 	log *core_logger.Logger,
@@ -35,10 +37,14 @@ func NewHTTPServer(
 	}
 }
 
+// RegisterAPIRouteInstrumenter installs the wrapper applied to each registered API route.
+// It allows metrics and tracing to use the original method and route template.
 func (s *HTTPServer) RegisterAPIRouteInstrumenter(instrumenter APIRouteInstrumenter) {
 	s.apiRouteInstrumenter = instrumenter
 }
 
+// RegisterAPIRouters mounts versioned API routers under /api/{version} and applies
+// the configured route instrumenter to their registered endpoints.
 func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 	for _, router := range routers {
 		prefix := "/api/" + string(router.apiVersion)
@@ -57,6 +63,7 @@ func (s *HTTPServer) RegisterAPIRouters(routers ...*APIVersionRouter) {
 	}
 }
 
+// RegisterSwagger mounts Swagger UI and the generated OpenAPI document endpoint.
 func (s *HTTPServer) RegisterSwagger() {
 	swaggerHandler := core_http_middleware.ChainMiddleware(
 		httpSwagger.Handler(
@@ -85,6 +92,8 @@ func (s *HTTPServer) RegisterSwagger() {
 	)
 }
 
+// Run starts listening for HTTP requests until the context is canceled or Serve exits.
+// It then performs bounded graceful shutdown and force-closes connections if necessary.
 func (s *HTTPServer) Run(ctx context.Context) error {
 	mux := core_http_middleware.ChainMiddleware(s.mux, s.middleware...)
 
