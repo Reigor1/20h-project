@@ -7,6 +7,7 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// DeleteUser removes the user identified by ID and propagates repository failures.
 func (s *UsersService) DeleteUser(
 	ctx context.Context,
 	id int,
