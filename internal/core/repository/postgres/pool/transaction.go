@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+// BeginTransaction creates a transaction using a context bounded by timeout.
+// The returned cancel function must be called by the caller after transaction handling.
 func BeginTransaction(
 	ctx context.Context,
 	pool TransactionalPool,
@@ -30,6 +32,8 @@ func BeginTransaction(
 	return txCtx, cancel, tx, nil
 }
 
+// RollbackTransaction attempts rollback with a short independent timeout so it can
+// still clean up after the request context has been canceled.
 func RollbackTransaction(ctx context.Context, tx Transaction, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
