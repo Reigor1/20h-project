@@ -10,6 +10,8 @@ import (
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 )
 
+// DeleteTask deletes a task and stores its task.deleted Outbox event atomically.
+// The deleted row is returned by PostgreSQL so its final state can be included in the event.
 func (r *TasksRepository) DeleteTask(
 	ctx context.Context,
 	id int,
