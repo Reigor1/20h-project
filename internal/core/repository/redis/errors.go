@@ -2,6 +2,8 @@ package core_redis
 
 import "errors"
 
+// Shared Redis errors let callers distinguish cache misses, unavailable connections,
+// and operation timeouts without depending on a concrete Redis client.
 var (
 	// ErrCacheMiss means that the requested key does not exist in Redis.
 	ErrCacheMiss = errors.New("cache miss")
