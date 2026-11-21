@@ -10,11 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Pool adapts pgxpool.Pool to the application's database interfaces and stores
+// the timeout applied by repositories to individual operations.
 type Pool struct {
 	*pgxpool.Pool
 	opTimeout time.Duration
 }
 
+// NewPool parses the connection settings, installs the query tracer, opens the pool,
+// and verifies connectivity before returning the adapter.
 func NewPool(
 	ctx context.Context,
 	config Config,
@@ -52,6 +56,7 @@ func NewPool(
 	}, nil
 }
 
+// Query executes a statement and adapts pgx rows to the repository abstraction.
 func (p *Pool) Query(
 	ctx context.Context,
 	sql string,
@@ -65,6 +70,7 @@ func (p *Pool) Query(
 	return pgxRows{rows}, nil
 }
 
+// QueryRow executes a single-row query through the repository abstraction.
 func (p *Pool) QueryRow(
 	ctx context.Context,
 	sql string,
@@ -75,6 +81,7 @@ func (p *Pool) QueryRow(
 	return pgxRow{rows}
 }
 
+// Exec executes a command and adapts pgx's command tag to the repository abstraction.
 func (p *Pool) Exec(
 	ctx context.Context,
 	sql string,
@@ -88,6 +95,7 @@ func (p *Pool) Exec(
 	return pgxCommandTag{tag}, nil
 }
 
+// Begin opens a PostgreSQL transaction and wraps pgx errors in shared repository errors.
 func (p *Pool) Begin(
 	ctx context.Context,
 ) (core_postgres_pool.Transaction, error) {
@@ -99,6 +107,7 @@ func (p *Pool) Begin(
 	return pgxTransaction{tx: tx}, nil
 }
 
+// OpTimeout returns the configured upper bound used for individual database operations.
 func (p *Pool) OpTimeout() time.Duration {
 	return p.opTimeout
 }
