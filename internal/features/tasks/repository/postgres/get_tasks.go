@@ -7,6 +7,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 )
 
+// GetTasks returns tasks in ascending ID order with pagination and an optional owner filter.
 func (r *TasksRepository) GetTasks(
 	ctx context.Context,
 	userID *int,
