@@ -236,6 +236,7 @@ todoapp-run-locally:
 	export POSTGRES_HOST=localhost && \
 	$(MAKE) env-redis-up && \
 	$(MAKE) env-postgres-up && \
+	$(MAKE) migrate-up && \
 	$(MAKE) env-port-forward && \
 	$(MAKE) observability-up && \
 	$(MAKE) kafka-up && \
@@ -255,6 +256,7 @@ todoapp-run-in-docker:
 	export POSTGRES_HOST=localhost && \
 	$(MAKE) env-redis-up && \
 	$(MAKE) env-postgres-up && \
+	$(MAKE) migrate-up && \
 	$(MAKE) env-port-forward && \
 	$(MAKE) observability-up && \
 	$(MAKE) kafka-up && \
@@ -264,6 +266,31 @@ todoapp-run-in-docker:
 	go mod tidy && \
 	$(MAKE) activity-workers-up && \
 	$(MAKE) todoapp-deploy
+
+# -----------------------------------------------------
+# Cleanup
+# -----------------------------------------------------
+
+# Stop the application and remove Compose containers and networks.
+# Preserve Docker volumes and all local application data.
+todoapp-down:
+	@docker compose down --remove-orphans
+
+
+# Stop the Compose project and remove all application containers,
+# networks, managed volumes and local runtime data.
+# Permanently deletes PostgreSQL, Kafka and observability data,
+# application logs and load testing results.
+# Requires explicit confirmation before deletion.
+todoapp-cleanup:
+	@read -p "WARNING: All application data and Docker volumes will be permanently deleted. Type 'yes' to continue: " ans; \
+	if [ "$$ans" = "yes" ]; then \
+		docker compose down --remove-orphans --volumes && \
+		rm -rf -- "$(PROJECT_ROOT)/out" && \
+		echo "Application environment completely cleaned up!"; \
+	else \
+		echo "Full cleanup aborted."; \
+	fi
 
 # -----------------------------------------------------
 # Todoapp
@@ -462,6 +489,17 @@ test-load:
 		-users=$(USERS) \
 		-tasks-per-user=$(TASKS_PER_USER)
 
+# Remove all load testing results.
+# Requires explicit user confirmation before deletion.
+load-tests-cleanup:
+	@read -p "Are you sure you want to clean up all load testing results? (y/n): " ans; \
+	if [ "$$ans" = "y" ]; then \
+		rm -rf -- "$(PROJECT_ROOT)/out/load-tests" && \
+		echo "Load testing results cleaned up!"; \
+	else \
+		echo "Load tests cleanup aborted."; \
+	fi
+
 # =====================================================
 # Observability
 # =====================================================
@@ -552,9 +590,23 @@ logs-cleanup:
 		echo "Logs cleanup aborted."; \
 	fi
 
+# Remove all observability data directories.
+# Requires explicit user confirmation before deleting data.
+observability-cleanup:
+	@read -p "Are you sure you want to clean up all observability data? (y/n): " ans; \
+	if [ "$$ans" = "y" ]; then \
+		rm -rf ${PROJECT_ROOT}/out/alloy && \
+		rm -rf ${PROJECT_ROOT}/out/grafana && \
+		rm -rf ${PROJECT_ROOT}/out/loki && \
+		rm -rf ${PROJECT_ROOT}/out/prometheus && \
+		rm -rf ${PROJECT_ROOT}/out/tempo && \
+		echo "Observability data cleaned up!"; \
+	else \
+		echo "Observability cleanup aborted."; \
+	fi
+
 # Restart one or more Docker Compose services.
 # Usage: make docker-restart SERVICES="alloy grafana"
-.PHONY: docker-restart
 docker-restart:
 	@if [ -z "$(strip $(SERVICES))" ]; then \
 		echo 'Usage: make docker-restart SERVICES="alloy grafana"'; \

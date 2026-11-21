@@ -331,7 +331,7 @@ services:
       - ${PROJECT_ROOT}/out/pgdata:/var/lib/postgresql
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 2s
       timeout: 3s
       retries: 20
@@ -347,7 +347,7 @@ services:
       - ${PROJECT_ROOT}/migrations:/migrations
     depends_on:
       todoapp-postgres:
-        condition: service_started
+        condition: service_healthy
 
   # ----------------------------
   # Local Database Access
