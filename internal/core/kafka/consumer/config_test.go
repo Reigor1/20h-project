@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// validConfig returns a Consumer configuration that satisfies all validation rules.
 func validConfig() Config {
 	return Config{
 		BootstrapServers:  "localhost:29092",
@@ -20,6 +21,7 @@ func validConfig() Config {
 	}
 }
 
+// TestConfigValidateRetrySettings checks valid and invalid retry delay combinations.
 func TestConfigValidateRetrySettings(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -75,6 +77,7 @@ func TestConfigValidateRetrySettings(t *testing.T) {
 	}
 }
 
+// TestConfigValidateAcceptsEqualRetryDelays verifies that equal base and maximum delays are allowed.
 func TestConfigValidateAcceptsEqualRetryDelays(t *testing.T) {
 	config := validConfig()
 	config.RetryMaxDelay = config.RetryBaseDelay
