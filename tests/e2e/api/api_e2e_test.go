@@ -8,6 +8,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// TestApiE2E starts the application and exercises the public Users, Tasks, and Statistics API flows.
 func TestApiE2E(t *testing.T) {
 	baseURL := testutil.StartApp(t)
 
