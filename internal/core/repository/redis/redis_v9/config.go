@@ -32,6 +32,7 @@ func NewConfig() (Config, error) {
 	return config, nil
 }
 
+// validate checks the Redis address, database index, and operation timeout.
 func (c Config) validate() error {
 	if strings.TrimSpace(c.Addr) == "" {
 		return fmt.Errorf("Redis address must not be empty")
