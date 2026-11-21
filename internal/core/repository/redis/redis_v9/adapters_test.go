@@ -10,6 +10,8 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
+// TestMapErrors verifies classification of cache misses, cancellation, connection failures,
+// and unclassified go-redis errors.
 func TestMapErrors(t *testing.T) {
 	originalError := errors.New("unexpected Redis response")
 	networkError := &net.OpError{
