@@ -12,6 +12,9 @@ import (
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 )
 
+// PatchTask performs an optimistic version-checked update and writes the corresponding
+// task.updated or task.completed Outbox event in the same transaction. Unchanged state
+// is returned without issuing an UPDATE or creating an event.
 func (r *TasksRepository) PatchTask(
 	ctx context.Context,
 	id int,
@@ -102,6 +105,7 @@ func (r *TasksRepository) PatchTask(
 	return updatedTask, nil
 }
 
+// sameTaskState compares all persisted task fields to detect a no-op update.
 func sameTaskState(before, after domain.Task) bool {
 	return before.ID == after.ID &&
 		before.Version == after.Version &&
@@ -113,6 +117,7 @@ func sameTaskState(before, after domain.Task) bool {
 		before.AuthorUserID == after.AuthorUserID
 }
 
+// equalStringPointers compares optional strings, including nil values.
 func equalStringPointers(left, right *string) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
@@ -121,6 +126,7 @@ func equalStringPointers(left, right *string) bool {
 	return *left == *right
 }
 
+// equalTimePointers compares optional timestamps using time.Time.Equal.
 func equalTimePointers(left, right *time.Time) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
