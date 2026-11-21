@@ -242,8 +242,8 @@ todoapp-run-locally:
 	$(MAKE) kafka-up && \
 	$(MAKE) kafka-topics-setup && \
 	$(MAKE) kafka-ui-up && \
-	go mod tidy && \
 	$(MAKE) activity-workers-up && \
+	go mod tidy && \
 	go run ${PROJECT_ROOT}/cmd/todoapp/main.go
 
 # -----------------------------------------------------
@@ -264,7 +264,6 @@ todoapp-run-in-docker:
 	$(MAKE) kafka-ui-up && \
 	$(MAKE) activity-workers-up && \
 	go mod tidy && \
-	$(MAKE) activity-workers-up && \
 	$(MAKE) todoapp-deploy
 
 # -----------------------------------------------------
