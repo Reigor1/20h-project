@@ -17,6 +17,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// TestRunServesRequestsAndShutsDownGracefully verifies the integration behavior represented by its test scenarios.
 func TestRunServesRequestsAndShutsDownGracefully(t *testing.T) {
 	address := availableHTTPTestAddress(t)
 	events := []string{}
@@ -112,6 +113,7 @@ func TestRunServesRequestsAndShutsDownGracefully(t *testing.T) {
 	}
 }
 
+// TestRunReturnsListenError verifies the integration behavior represented by its test scenarios.
 func TestRunReturnsListenError(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -140,6 +142,7 @@ func TestRunReturnsListenError(t *testing.T) {
 	}
 }
 
+// TestRunWaitsForInFlightRequestBeforeReturning verifies the integration behavior represented by its test scenarios.
 func TestRunWaitsForInFlightRequestBeforeReturning(t *testing.T) {
 	address := availableHTTPTestAddress(t)
 	logger, logs := testutil.NewObservedLogger()
@@ -361,6 +364,7 @@ func TestRunWaitsForInFlightRequestBeforeReturning(t *testing.T) {
 	}
 }
 
+// availableHTTPTestAddress allocates an available local address for the HTTP integration test.
 func availableHTTPTestAddress(t *testing.T) string {
 	t.Helper()
 
@@ -375,6 +379,7 @@ func availableHTTPTestAddress(t *testing.T) string {
 	return address
 }
 
+// waitForHTTPTestResponse waits for the expected HTTP response within the test timeout.
 func waitForHTTPTestResponse(
 	t *testing.T,
 	url string,
@@ -405,6 +410,7 @@ func waitForHTTPTestResponse(
 	return nil, fmt.Errorf("server did not become ready at %s: %w", url, lastError)
 }
 
+// isLoopbackPermissionError classifies the supplied error for the integration test.
 func isLoopbackPermissionError(err error) bool {
 	message := err.Error()
 	return strings.Contains(message, "access permissions") ||
