@@ -10,15 +10,18 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// recordedSpan stores the span context and recording state captured by the test repository.
 type recordedSpan struct {
 	spanContext trace.SpanContext
 	isRecording bool
 }
 
+// tracingUsersRepository records the active span context passed to repository operations.
 type tracingUsersRepository struct {
 	spans []recordedSpan
 }
 
+// recordContext implements the corresponding repository operation for tracing or service tests.
 func (r *tracingUsersRepository) recordContext(ctx context.Context) {
 	span := trace.SpanFromContext(ctx)
 
@@ -28,6 +31,7 @@ func (r *tracingUsersRepository) recordContext(ctx context.Context) {
 	})
 }
 
+// CreateUser implements the corresponding repository operation for tracing or service tests.
 func (r *tracingUsersRepository) CreateUser(
 	ctx context.Context,
 	user domain.User,
@@ -36,6 +40,7 @@ func (r *tracingUsersRepository) CreateUser(
 	return user, nil
 }
 
+// GetUsers implements the corresponding repository operation for tracing or service tests.
 func (r *tracingUsersRepository) GetUsers(
 	ctx context.Context,
 	_ *int,
@@ -45,6 +50,7 @@ func (r *tracingUsersRepository) GetUsers(
 	return []domain.User{}, nil
 }
 
+// GetUser implements the corresponding repository operation for tracing or service tests.
 func (r *tracingUsersRepository) GetUser(
 	ctx context.Context,
 	_ int,
@@ -53,6 +59,7 @@ func (r *tracingUsersRepository) GetUser(
 	return domain.NewUser(42, 1, "Ada Lovelace", nil), nil
 }
 
+// DeleteUser implements the corresponding repository operation for tracing or service tests.
 func (r *tracingUsersRepository) DeleteUser(
 	ctx context.Context,
 	_ int,
@@ -61,6 +68,7 @@ func (r *tracingUsersRepository) DeleteUser(
 	return nil
 }
 
+// PatchUser implements the corresponding repository operation for tracing or service tests.
 func (r *tracingUsersRepository) PatchUser(
 	ctx context.Context,
 	_ int,
@@ -70,6 +78,7 @@ func (r *tracingUsersRepository) PatchUser(
 	return user, nil
 }
 
+// TestUsersServiceCreatesSpansAndPassesSpanContextToRepository verifies the behavior and expected outcomes described by its test scenarios.
 func TestUsersServiceCreatesSpansAndPassesSpanContextToRepository(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 
