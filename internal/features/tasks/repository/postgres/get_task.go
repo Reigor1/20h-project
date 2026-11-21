@@ -10,6 +10,8 @@ import (
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 )
 
+// GetTask selects one task by ID, maps the row to the domain model, and translates
+// an absent row into the shared not-found error.
 func (r *TasksRepository) GetTask(
 	ctx context.Context,
 	id int,
