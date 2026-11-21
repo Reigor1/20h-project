@@ -13,15 +13,19 @@ import (
 	"time"
 )
 
+// workloadStages defines a shared limit or value used by the test workflow.
 var workloadStages = []int{5, 10, 25, 50}
 
+// maxLatencySamplesPerWorker defines a shared limit or value used by the test workflow.
 const maxLatencySamplesPerWorker = 10_000
 
+// workloadTarget stores the data required by the corresponding test scenario.
 type workloadTarget struct {
 	method string
 	path   string
 }
 
+// workloadStats stores the data required by the corresponding test scenario.
 type workloadStats struct {
 	requests           int64
 	successful         int64
@@ -35,6 +39,7 @@ type workloadStats struct {
 	statusCodes        map[int]int64
 }
 
+// loadStageReport stores the data required by the corresponding test scenario.
 type loadStageReport struct {
 	Profile           string        `json:"profile"`
 	Stage             int           `json:"stage"`
@@ -57,6 +62,7 @@ type loadStageReport struct {
 	StatusCodes       map[int]int64 `json:"status_codes"`
 }
 
+// runWorkload executes the corresponding observability test workflow.
 func runWorkload(
 	ctx context.Context,
 	client *apiClient,
@@ -74,6 +80,7 @@ func runWorkload(
 	return err
 }
 
+// runWorkerStages executes the corresponding observability test workflow.
 func runWorkerStages(
 	ctx context.Context,
 	client *apiClient,
@@ -207,6 +214,7 @@ func runWorkerStages(
 	return reports, nil
 }
 
+// buildWorkloadTargets prepares the workload inputs used by the load scenario.
 func buildWorkloadTargets(
 	fixtures *fixtureSet,
 ) ([]workloadTarget, error) {
@@ -268,6 +276,7 @@ func buildWorkloadTargets(
 	return targets, nil
 }
 
+// runWorkloadWorker executes the corresponding observability test workflow.
 func runWorkloadWorker(
 	stageCtx context.Context,
 	requestCtx context.Context,
@@ -308,6 +317,7 @@ func runWorkloadWorker(
 	}
 }
 
+// record adds the supplied measurement to the workload statistics.
 func (s *workloadStats) record(
 	statusCode int,
 	err error,
@@ -336,6 +346,7 @@ func (s *workloadStats) record(
 	s.failed++
 }
 
+// recordCancellation adds the supplied measurement to the workload statistics.
 func (s *workloadStats) recordCancellation(duration time.Duration) {
 	s.requests++
 	s.cancelledRequests++
@@ -347,6 +358,7 @@ func (s *workloadStats) recordCancellation(duration time.Duration) {
 	}
 }
 
+// recordLatency adds the supplied measurement to the workload statistics.
 func (s *workloadStats) recordLatency(duration time.Duration) {
 	s.latencySamplesSeen++
 
@@ -363,6 +375,7 @@ func (s *workloadStats) recordLatency(duration time.Duration) {
 	}
 }
 
+// add supports setup, execution, or verification of the corresponding test scenario.
 func (s *workloadStats) add(other workloadStats, includeLatencySamples bool) {
 	s.requests += other.requests
 	s.successful += other.successful
@@ -384,6 +397,7 @@ func (s *workloadStats) add(other workloadStats, includeLatencySamples bool) {
 	}
 }
 
+// printWorkloadStage formats or prints the corresponding workload result.
 func printWorkloadStage(
 	profileName string,
 	stageNumber int,
@@ -460,6 +474,7 @@ func printWorkloadStage(
 	return report
 }
 
+// percentileDuration calculates the requested percentile from sorted latency samples.
 func percentileDuration(sortedSamples []time.Duration, percentile int) time.Duration {
 	if len(sortedSamples) == 0 || percentile <= 0 || percentile > 100 {
 		return 0
@@ -476,6 +491,7 @@ func percentileDuration(sortedSamples []time.Duration, percentile int) time.Dura
 	return sortedSamples[index]
 }
 
+// formatStatusCounts formats or prints the corresponding workload result.
 func formatStatusCounts(statusCodes map[int]int64) string {
 	if len(statusCodes) == 0 {
 		return "none"
