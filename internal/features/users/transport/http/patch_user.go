@@ -12,11 +12,14 @@ import (
 	core_http_types "github.com/Reigor1/20h-project/internal/core/transport/http/types"
 )
 
+// PatchUserRequest preserves omitted, explicit null, and concrete values for each field,
+// allowing nullable phone numbers to be cleared without changing omitted fields.
 type PatchUserRequest struct {
 	FullName    core_http_types.Nullable[string] `json:"full_name"    swaggertype:"string" example:"Максим Максимович"`
 	PhoneNumber core_http_types.Nullable[string] `json:"phone_number" swaggertype:"string" example:"+71112223344"`
 }
 
+// Validate enforces full-name and phone-number constraints and rejects a null full name.
 func (r *PatchUserRequest) Validate() error {
 	if r.FullName.Set {
 		if r.FullName.Value == nil {
@@ -45,6 +48,7 @@ func (r *PatchUserRequest) Validate() error {
 	return nil
 }
 
+// PatchUserResponse is the JSON representation returned after a user update.
 type PatchUserResponse UserDTOResponse
 
 // PatchUser    godoc
@@ -66,6 +70,8 @@ type PatchUserResponse UserDTOResponse
 // @Failure     409 {object} core_http_response.ErrorResponse "Conflict"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /users/{id} [patch]
+// PatchUser parses the user ID and partial-update body, delegates the update to the service,
+// and returns the resulting user state.
 func (h UsersHTTPHandler) PatchUser(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)
@@ -108,6 +114,7 @@ func (h UsersHTTPHandler) PatchUser(rw http.ResponseWriter, r *http.Request) {
 	responseHandler.JSONResponse(response, http.StatusOK)
 }
 
+// userPatchFromRequest converts transport fields into the domain user patch contract.
 func userPatchFromRequest(request PatchUserRequest) domain.UserPatch {
 	return domain.NewUserPatch(
 		request.FullName.ToDomain(),
