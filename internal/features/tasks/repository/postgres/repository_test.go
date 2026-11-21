@@ -44,6 +44,7 @@ type repositoryTestPool struct {
 	gotContext   context.Context
 }
 
+// newRepositoryTestPool creates a configured test fixture for repository tests.
 func newRepositoryTestPool(t *testing.T) *repositoryTestPool {
 	t.Helper()
 
@@ -57,6 +58,7 @@ func newRepositoryTestPool(t *testing.T) *repositoryTestPool {
 	}
 }
 
+// Begin implements the corresponding database pool or transaction operation for tests.
 func (p *repositoryTestPool) Begin(ctx context.Context) (core_postgres_pool.Transaction, error) {
 	p.beginCalls++
 	p.beginContext = ctx
@@ -70,6 +72,7 @@ func (p *repositoryTestPool) Begin(ctx context.Context) (core_postgres_pool.Tran
 	return p.transaction, nil
 }
 
+// Query implements the corresponding database pool or transaction operation for tests.
 func (p *repositoryTestPool) Query(
 	ctx context.Context,
 	sql string,
@@ -88,6 +91,7 @@ func (p *repositoryTestPool) Query(
 	return p.queryResult, p.queryError
 }
 
+// QueryRow implements the corresponding database pool or transaction operation for tests.
 func (p *repositoryTestPool) QueryRow(
 	ctx context.Context,
 	sql string,
@@ -106,6 +110,7 @@ func (p *repositoryTestPool) QueryRow(
 	return p.rowResult
 }
 
+// Exec implements the corresponding database pool or transaction operation for tests.
 func (p *repositoryTestPool) Exec(
 	ctx context.Context,
 	sql string,
@@ -124,12 +129,15 @@ func (p *repositoryTestPool) Exec(
 	return p.execResult, p.execError
 }
 
+// Close records or simulates resource cleanup for repository tests.
 func (*repositoryTestPool) Close() {}
 
+// OpTimeout implements a test helper for the PostgreSQL repository contract.
 func (p *repositoryTestPool) OpTimeout() time.Duration {
 	return p.operationTimeout
 }
 
+// assertNoPreviousPoolCall checks the expected repository result or event data in a test.
 func (p *repositoryTestPool) assertNoPreviousPoolCall(method string) {
 	p.t.Helper()
 
@@ -171,6 +179,7 @@ type repositoryTestTransaction struct {
 	callOrder    []string
 }
 
+// Query implements the corresponding database pool or transaction operation for tests.
 func (tx *repositoryTestTransaction) Query(
 	ctx context.Context,
 	sql string,
@@ -189,6 +198,7 @@ func (tx *repositoryTestTransaction) Query(
 	return tx.queryResult, tx.queryError
 }
 
+// QueryRow implements the corresponding database pool or transaction operation for tests.
 func (tx *repositoryTestTransaction) QueryRow(
 	ctx context.Context,
 	sql string,
@@ -207,6 +217,7 @@ func (tx *repositoryTestTransaction) QueryRow(
 	return tx.rowResult
 }
 
+// Exec implements the corresponding database pool or transaction operation for tests.
 func (tx *repositoryTestTransaction) Exec(
 	ctx context.Context,
 	sql string,
@@ -225,6 +236,7 @@ func (tx *repositoryTestTransaction) Exec(
 	return tx.execResult, tx.execError
 }
 
+// Commit simulates the corresponding transaction lifecycle operation.
 func (tx *repositoryTestTransaction) Commit(ctx context.Context) error {
 	tx.commitCalls++
 	tx.commitCtx = ctx
@@ -232,6 +244,7 @@ func (tx *repositoryTestTransaction) Commit(ctx context.Context) error {
 	return tx.commitError
 }
 
+// Rollback simulates the corresponding transaction lifecycle operation.
 func (tx *repositoryTestTransaction) Rollback(ctx context.Context) error {
 	tx.rollbackCalls++
 	tx.rollbackCtx = ctx
@@ -248,6 +261,7 @@ type repositoryTestOutboxRepository struct {
 	gotEvent    core_events.Envelope
 }
 
+// Create implements a test helper for the PostgreSQL repository contract.
 func (r *repositoryTestOutboxRepository) Create(
 	ctx context.Context,
 	executor core_postgres_pool.Executor,
@@ -290,6 +304,7 @@ func (r *repositoryTestOutboxRepository) Create(
 	return nil
 }
 
+// newTasksRepositoryForTest creates a configured test fixture for repository tests.
 func newTasksRepositoryForTest(
 	pool *repositoryTestPool,
 ) (*TasksRepository, *repositoryTestOutboxRepository) {
@@ -305,6 +320,7 @@ type repositoryTestRow struct {
 	scans  int
 }
 
+// Scan simulates scanning database values into repository destinations.
 func (r *repositoryTestRow) Scan(destinations ...any) error {
 	r.scans++
 	if r.err != nil {
@@ -323,6 +339,7 @@ func (r *repositoryTestRow) Scan(destinations ...any) error {
 	return nil
 }
 
+// assignTaskScanValue simulates scanning database values into repository destinations.
 func assignTaskScanValue(destination, value any) error {
 	switch destination := destination.(type) {
 	case *int:
@@ -376,6 +393,7 @@ type repositoryTestRows struct {
 	closeCalls int
 }
 
+// Next exposes the configured row iteration state to the repository under test.
 func (r *repositoryTestRows) Next() bool {
 	if r.current >= len(r.rows) {
 		return false
@@ -384,6 +402,7 @@ func (r *repositoryTestRows) Next() bool {
 	return true
 }
 
+// Scan simulates scanning database values into repository destinations.
 func (r *repositoryTestRows) Scan(destinations ...any) error {
 	if r.scanError != nil {
 		return r.scanError
@@ -391,10 +410,12 @@ func (r *repositoryTestRows) Scan(destinations ...any) error {
 	return (&repositoryTestRow{values: r.rows[r.current-1]}).Scan(destinations...)
 }
 
+// Err exposes the configured row iteration state to the repository under test.
 func (r *repositoryTestRows) Err() error {
 	return r.rowsError
 }
 
+// Close records or simulates resource cleanup for repository tests.
 func (r *repositoryTestRows) Close() {
 	r.closeCalls++
 }
@@ -403,10 +424,12 @@ type repositoryTestCommandTag struct {
 	rowsAffected int64
 }
 
+// RowsAffected simulates database row iteration and resource cleanup.
 func (tag repositoryTestCommandTag) RowsAffected() int64 {
 	return tag.rowsAffected
 }
 
+// TestNewTasksRepositoryStoresPoolAndOutboxRepository verifies the repository behavior and failure handling represented by its test cases.
 func TestNewTasksRepositoryStoresPoolAndOutboxRepository(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 	outboxRepository := &repositoryTestOutboxRepository{}
@@ -421,6 +444,7 @@ func TestNewTasksRepositoryStoresPoolAndOutboxRepository(t *testing.T) {
 	}
 }
 
+// TestTaskDomainsFromModels verifies the repository behavior and failure handling represented by its test cases.
 func TestTaskDomainsFromModels(t *testing.T) {
 	description := "Review the submitted work"
 	createdAt := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
@@ -488,6 +512,7 @@ func TestTaskDomainsFromModels(t *testing.T) {
 	}
 }
 
+// TestCreateTask verifies the repository behavior and failure handling represented by its test cases.
 func TestCreateTask(t *testing.T) {
 	description := "Prepare the final report"
 	createdAt := time.Date(2026, 10, 21, 9, 15, 0, 0, time.UTC)
@@ -528,6 +553,7 @@ func TestCreateTask(t *testing.T) {
 	assertOutboxEvent(t, pool, outboxRepository, core_events.EventTypeTaskCreated, wantTask, nil)
 }
 
+// TestCreateTaskMapsForeignKeyViolationToNotFound verifies the repository behavior and failure handling represented by its test cases.
 func TestCreateTaskMapsForeignKeyViolationToNotFound(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrViolatesForeignKey}
 	pool := newRepositoryTestPool(t)
@@ -554,6 +580,7 @@ func TestCreateTaskMapsForeignKeyViolationToNotFound(t *testing.T) {
 	}
 }
 
+// TestCreateTaskReturnsScanError verifies the repository behavior and failure handling represented by its test cases.
 func TestCreateTaskReturnsScanError(t *testing.T) {
 	scanError := errors.New("returned task could not be decoded")
 	row := &repositoryTestRow{err: scanError}
@@ -575,6 +602,7 @@ func TestCreateTaskReturnsScanError(t *testing.T) {
 	}
 }
 
+// TestCreateTaskReturnsBeginError verifies the repository behavior and failure handling represented by its test cases.
 func TestCreateTaskReturnsBeginError(t *testing.T) {
 	beginError := errors.New("begin transaction failed")
 	pool := newRepositoryTestPool(t)
@@ -592,6 +620,7 @@ func TestCreateTaskReturnsBeginError(t *testing.T) {
 	}
 }
 
+// TestCreateTaskRollsBackWhenOutboxInsertFails verifies the repository behavior and failure handling represented by its test cases.
 func TestCreateTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
 	outboxError := errors.New("outbox insert failed")
 	row := &repositoryTestRow{
@@ -619,6 +648,7 @@ func TestCreateTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
 	}
 }
 
+// TestGetTask verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTask(t *testing.T) {
 	description := "Review the submitted report"
 	createdAt := time.Date(2026, 10, 22, 8, 30, 0, 0, time.UTC)
@@ -651,6 +681,7 @@ func TestGetTask(t *testing.T) {
 	}
 }
 
+// TestGetTaskPreservesNullDescriptionAndCompletionTime verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTaskPreservesNullDescriptionAndCompletionTime(t *testing.T) {
 	createdAt := time.Date(2026, 10, 22, 8, 30, 0, 0, time.UTC)
 	row := &repositoryTestRow{
@@ -670,6 +701,7 @@ func TestGetTaskPreservesNullDescriptionAndCompletionTime(t *testing.T) {
 	}
 }
 
+// TestGetTaskTranslatesNoRowsToNotFound verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTaskTranslatesNoRowsToNotFound(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrNoRows}
 	pool := newRepositoryTestPool(t)
@@ -686,6 +718,7 @@ func TestGetTaskTranslatesNoRowsToNotFound(t *testing.T) {
 	}
 }
 
+// TestGetTaskReturnsScanError verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTaskReturnsScanError(t *testing.T) {
 	scanError := errors.New("task row decoding failed")
 	row := &repositoryTestRow{err: scanError}
@@ -700,6 +733,7 @@ func TestGetTaskReturnsScanError(t *testing.T) {
 	}
 }
 
+// TestGetTasksFiltersByAuthorAndPreservesOrder verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTasksFiltersByAuthorAndPreservesOrder(t *testing.T) {
 	firstDescription := "First task description"
 	firstCreatedAt := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
@@ -748,6 +782,7 @@ func TestGetTasksFiltersByAuthorAndPreservesOrder(t *testing.T) {
 	}
 }
 
+// TestGetTasksWithoutAuthorFilterReturnsNonNilEmptySlice verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTasksWithoutAuthorFilterReturnsNonNilEmptySlice(t *testing.T) {
 	rows := &repositoryTestRows{}
 	pool := newRepositoryTestPool(t)
@@ -772,6 +807,7 @@ func TestGetTasksWithoutAuthorFilterReturnsNonNilEmptySlice(t *testing.T) {
 	}
 }
 
+// TestGetTasksReturnsQueryError verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTasksReturnsQueryError(t *testing.T) {
 	queryError := errors.New("query failed")
 	pool := newRepositoryTestPool(t)
@@ -788,6 +824,7 @@ func TestGetTasksReturnsQueryError(t *testing.T) {
 	}
 }
 
+// TestGetTasksReturnsScanErrorAndClosesRows verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTasksReturnsScanErrorAndClosesRows(t *testing.T) {
 	scanError := errors.New("task row scan failed")
 	rows := &repositoryTestRows{
@@ -808,6 +845,7 @@ func TestGetTasksReturnsScanErrorAndClosesRows(t *testing.T) {
 	}
 }
 
+// TestGetTasksReturnsRowsIterationErrorAndClosesRows verifies the repository behavior and failure handling represented by its test cases.
 func TestGetTasksReturnsRowsIterationErrorAndClosesRows(t *testing.T) {
 	iterationError := errors.New("row iteration failed")
 	rows := &repositoryTestRows{rowsError: iterationError}
@@ -825,6 +863,7 @@ func TestGetTasksReturnsRowsIterationErrorAndClosesRows(t *testing.T) {
 	}
 }
 
+// TestPatchTask verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchTask(t *testing.T) {
 	oldDescription := "Previous task details"
 	newDescription := "Updated task details"
@@ -871,6 +910,7 @@ func TestPatchTask(t *testing.T) {
 	assertOutboxEvent(t, pool, outboxRepository, core_events.EventTypeTaskUpdated, wantTask, &before)
 }
 
+// TestPatchTaskCreatesTaskCompletedEvent verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchTaskCreatesTaskCompletedEvent(t *testing.T) {
 	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
 	completedAt := createdAt.Add(time.Hour)
@@ -894,6 +934,7 @@ func TestPatchTaskCreatesTaskCompletedEvent(t *testing.T) {
 	assertOutboxEvent(t, pool, outboxRepository, core_events.EventTypeTaskCompleted, wantTask, &before)
 }
 
+// TestPatchTaskPassesNilForClearedNullableFields verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchTaskPassesNilForClearedNullableFields(t *testing.T) {
 	oldDescription := "Remove this description"
 	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
@@ -921,6 +962,7 @@ func TestPatchTaskPassesNilForClearedNullableFields(t *testing.T) {
 	}
 }
 
+// TestPatchTaskNoOpDoesNotStartTransaction verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchTaskNoOpDoesNotStartTransaction(t *testing.T) {
 	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
 	completedAt := createdAt.Add(time.Hour)
@@ -947,6 +989,7 @@ func TestPatchTaskNoOpDoesNotStartTransaction(t *testing.T) {
 	}
 }
 
+// TestPatchTaskRejectsMismatchedTaskState verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchTaskRejectsMismatchedTaskState(t *testing.T) {
 	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
 	before := domain.NewTask(42, 5, "Before", nil, false, createdAt, nil, 23)
@@ -964,6 +1007,7 @@ func TestPatchTaskRejectsMismatchedTaskState(t *testing.T) {
 	}
 }
 
+// TestPatchTaskTranslatesNoRowsToConflict verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchTaskTranslatesNoRowsToConflict(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrNoRows}
 	pool := newRepositoryTestPool(t)
@@ -989,6 +1033,7 @@ func TestPatchTaskTranslatesNoRowsToConflict(t *testing.T) {
 	}
 }
 
+// TestPatchTaskReturnsScanError verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchTaskReturnsScanError(t *testing.T) {
 	scanError := errors.New("updated task could not be decoded")
 	row := &repositoryTestRow{err: scanError}
@@ -1009,6 +1054,7 @@ func TestPatchTaskReturnsScanError(t *testing.T) {
 	}
 }
 
+// TestPatchTaskRollsBackWhenOutboxInsertFails verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
 	outboxError := errors.New("outbox insert failed")
 	createdAt := time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC)
@@ -1032,6 +1078,7 @@ func TestPatchTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
 	}
 }
 
+// TestDeleteTask verifies the repository behavior and failure handling represented by its test cases.
 func TestDeleteTask(t *testing.T) {
 	createdAt := time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC)
 	description := "Delete this task after preserving its snapshot"
@@ -1064,6 +1111,7 @@ func TestDeleteTask(t *testing.T) {
 	assertOutboxEvent(t, pool, outboxRepository, core_events.EventTypeTaskDeleted, deletedTask, nil)
 }
 
+// TestDeleteTaskReturnsDeleteError verifies the repository behavior and failure handling represented by its test cases.
 func TestDeleteTaskReturnsDeleteError(t *testing.T) {
 	executionError := errors.New("delete failed")
 	row := &repositoryTestRow{err: executionError}
@@ -1087,6 +1135,7 @@ func TestDeleteTaskReturnsDeleteError(t *testing.T) {
 	}
 }
 
+// TestDeleteTaskReturnsNotFoundWhenTaskDoesNotExist verifies the repository behavior and failure handling represented by its test cases.
 func TestDeleteTaskReturnsNotFoundWhenTaskDoesNotExist(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrNoRows}
 	pool := newRepositoryTestPool(t)
@@ -1109,6 +1158,7 @@ func TestDeleteTaskReturnsNotFoundWhenTaskDoesNotExist(t *testing.T) {
 	}
 }
 
+// TestDeleteTaskRollsBackWhenOutboxInsertFails verifies the repository behavior and failure handling represented by its test cases.
 func TestDeleteTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
 	outboxError := errors.New("outbox insert failed")
 	createdAt := time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC)
@@ -1130,6 +1180,7 @@ func TestDeleteTaskRollsBackWhenOutboxInsertFails(t *testing.T) {
 	}
 }
 
+// assertOutboxEvent checks the expected repository result or event data in a test.
 func assertOutboxEvent(
 	t *testing.T,
 	pool *repositoryTestPool,
@@ -1228,6 +1279,7 @@ func assertOutboxEvent(
 	}
 }
 
+// taskSnapshotForTest creates or compares the task snapshot used in event assertions.
 func taskSnapshotForTest(task domain.Task) core_events.TaskSnapshot {
 	return core_events.TaskSnapshot{
 		ID:           int64(task.ID),
@@ -1241,6 +1293,7 @@ func taskSnapshotForTest(task domain.Task) core_events.TaskSnapshot {
 	}
 }
 
+// taskSnapshotsEqual creates or compares the task snapshot used in event assertions.
 func taskSnapshotsEqual(left, right core_events.TaskSnapshot) bool {
 	if left.ID != right.ID ||
 		left.Version != right.Version ||
