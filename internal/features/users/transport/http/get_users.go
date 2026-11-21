@@ -9,6 +9,7 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 )
 
+// GetUsersResponse is the JSON array returned by the user listing endpoint.
 type GetUsersResponse []UserDTOResponse
 
 // GetUsers     godoc
@@ -22,6 +23,8 @@ type GetUsersResponse []UserDTOResponse
 // @Failure     400 {object} core_http_response.ErrorResponse "Bad request"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /users [get]
+// GetUsers parses pagination parameters, retrieves users through the service,
+// and writes the result as a JSON response.
 func (h *UsersHTTPHandler) GetUsers(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)
@@ -52,6 +55,7 @@ func (h *UsersHTTPHandler) GetUsers(rw http.ResponseWriter, r *http.Request) {
 	responseHandler.JSONResponse(response, http.StatusOK)
 }
 
+// getLimitOffsetQueryParams parses the optional limit and offset query parameters.
 func getLimitOffsetQueryParams(r *http.Request) (*int, *int, error) {
 	const (
 		limitQueryParamKey  = "limit"
