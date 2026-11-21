@@ -10,6 +10,7 @@ import (
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 )
 
+// TestTaskCompletionDuration checks elapsed-time calculation for completed and incomplete tasks.
 func TestTaskCompletionDuration(t *testing.T) {
 	createdAt := time.Date(2026, time.January, 1, 10, 0, 0, 0, time.UTC)
 	completedAt := createdAt.Add(90 * time.Minute)
@@ -59,6 +60,7 @@ func TestTaskCompletionDuration(t *testing.T) {
 	}
 }
 
+// TestTaskValidate verifies task field constraints and completion timestamp consistency.
 func TestTaskValidate(t *testing.T) {
 	createdAt := time.Date(2026, time.January, 1, 10, 0, 0, 0, time.UTC)
 	completedAt := createdAt.Add(time.Hour)
@@ -208,6 +210,7 @@ func TestTaskValidate(t *testing.T) {
 	}
 }
 
+// TestTaskPatchValidate checks which nullable and required fields are valid in a patch.
 func TestTaskPatchValidate(t *testing.T) {
 	updatedTitle := "Updated title"
 	completedState := true
@@ -276,6 +279,7 @@ func TestTaskPatchValidate(t *testing.T) {
 	}
 }
 
+// TestTaskApplyPatch verifies partial updates, explicit null handling, and atomic validation.
 func TestTaskApplyPatch(t *testing.T) {
 	createdAt := time.Date(2026, time.January, 1, 10, 0, 0, 0, time.UTC)
 	originalDescription := "Old description"
@@ -586,6 +590,7 @@ func TestTaskApplyPatch(t *testing.T) {
 	}
 }
 
+// TestNewTaskUninitialized checks the default identity, version, and completion state of a new task.
 func TestNewTaskUninitialized(t *testing.T) {
 	description := "Details"
 	task := NewTaskUninitialized("Task", &description, 42)
@@ -616,4 +621,5 @@ func TestNewTaskUninitialized(t *testing.T) {
 	}
 }
 
+// durationPointer returns a pointer to a duration for concise test case construction.
 func durationPointer(value time.Duration) *time.Duration { return &value }
