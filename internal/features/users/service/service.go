@@ -9,6 +9,7 @@ import (
 
 const tracerInstrumentationName = "github.com/Reigor1/20h-project/internal/features/users/service"
 
+// UsersService implements user use cases over the Users repository.
 type UsersService struct {
 	usersRepository UsersRepository
 	tracer          trace.Tracer
