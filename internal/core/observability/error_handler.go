@@ -9,6 +9,8 @@ import (
 // ConfigureErrorHandler routes OpenTelemetry SDK diagnostics
 // through the application logger.
 // Call it once, before creating SDK providers.
+// ConfigureErrorHandler installs an OpenTelemetry SDK error handler that reports
+// asynchronous exporter and instrumentation errors through the application logger.
 func ConfigureErrorHandler(logger *core_logger.Logger) {
 	if logger == nil {
 		return
