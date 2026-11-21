@@ -8,6 +8,7 @@ import (
 	core_events "github.com/Reigor1/20h-project/internal/core/events"
 )
 
+// Activity is the service-level representation of a persisted task event.
 type Activity struct {
 	EventID          string
 	EventType        string
@@ -20,6 +21,7 @@ type Activity struct {
 	Payload          []byte
 }
 
+// ActivityRepository defines idempotent event recording and paginated Activity retrieval.
 type ActivityRepository interface {
 	Record(
 		ctx context.Context,
@@ -34,10 +36,12 @@ type ActivityRepository interface {
 	) ([]Activity, error)
 }
 
+// ActivityService applies Activity use-case rules over the persistence repository.
 type ActivityService struct {
 	repository ActivityRepository
 }
 
+// NewActivityService creates an Activity service with its repository dependency.
 func NewActivityService(
 	repository ActivityRepository,
 ) *ActivityService {
@@ -46,6 +50,7 @@ func NewActivityService(
 	}
 }
 
+// Record validates the event contract and persists it idempotently through the repository.
 func (s *ActivityService) Record(
 	ctx context.Context,
 	event core_events.Envelope,
