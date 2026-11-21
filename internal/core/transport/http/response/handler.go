@@ -11,11 +11,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// HTTPResponseHandler centralizes JSON, no-content, and error responses for HTTP handlers.
 type HTTPResponseHandler struct {
 	log *core_logger.Logger
 	rw  http.ResponseWriter
 }
 
+// NewHTTPResponseHandler binds a logger and response writer for one HTTP request.
 func NewHTTPResponseHandler(
 	log *core_logger.Logger,
 	rw http.ResponseWriter,
@@ -26,6 +28,8 @@ func NewHTTPResponseHandler(
 	}
 }
 
+// JSONResponse writes responseBody as JSON with the supplied HTTP status code.
+// Encoding failures are logged because the response may already have been started.
 func (h *HTTPResponseHandler) JSONResponse(
 	responseBody any,
 	statusCode int,
@@ -38,10 +42,13 @@ func (h *HTTPResponseHandler) JSONResponse(
 	}
 }
 
+// NoContentResponse completes the request with HTTP 204 and no response body.
 func (h *HTTPResponseHandler) NoContentResponse() {
 	h.rw.WriteHeader(http.StatusNoContent)
 }
 
+// ErrorResponse maps shared domain errors to HTTP status codes, logs them at the
+// corresponding severity, and writes the common JSON error payload.
 func (h *HTTPResponseHandler) ErrorResponse(err error, msg string) {
 	var (
 		statusCode int
@@ -72,6 +79,7 @@ func (h *HTTPResponseHandler) ErrorResponse(err error, msg string) {
 	)
 }
 
+// PanicResponse logs a recovered panic and returns a generic HTTP 500 response.
 func (h *HTTPResponseHandler) PanicResponse(p any, msg string) {
 	statusCode := http.StatusInternalServerError
 	err := fmt.Errorf("unexpected panic: %v", p)
@@ -85,6 +93,7 @@ func (h *HTTPResponseHandler) PanicResponse(p any, msg string) {
 	)
 }
 
+// errorResponse converts an error and human-readable message into the common JSON payload.
 func (h *HTTPResponseHandler) errorResponse(
 	statusCode int,
 	err error,
