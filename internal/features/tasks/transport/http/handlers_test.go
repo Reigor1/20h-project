@@ -56,11 +56,13 @@ type tasksServiceStub struct {
 	taskPatch       domain.TaskPatch
 }
 
+// newTasksServiceStub creates a request or test fixture for the Tasks HTTP handler tests.
 func newTasksServiceStub(t *testing.T) *tasksServiceStub {
 	t.Helper()
 	return &tasksServiceStub{t: t}
 }
 
+// CreateTask provides a test helper for Tasks HTTP handler assertions.
 func (s *tasksServiceStub) CreateTask(_ context.Context, task domain.Task) (domain.Task, error) {
 	s.createTaskCalls++
 	s.createdTask = task
@@ -70,6 +72,7 @@ func (s *tasksServiceStub) CreateTask(_ context.Context, task domain.Task) (doma
 	return s.createTaskResult, s.createTaskError
 }
 
+// GetTasks provides a test helper for Tasks HTTP handler assertions.
 func (s *tasksServiceStub) GetTasks(
 	_ context.Context,
 	userID *int,
@@ -86,6 +89,7 @@ func (s *tasksServiceStub) GetTasks(
 	return s.getTasksResult, s.getTasksError
 }
 
+// GetTask provides a test helper for Tasks HTTP handler assertions.
 func (s *tasksServiceStub) GetTask(_ context.Context, id int) (domain.Task, error) {
 	s.getTaskCalls++
 	s.getTaskID = id
@@ -95,6 +99,7 @@ func (s *tasksServiceStub) GetTask(_ context.Context, id int) (domain.Task, erro
 	return s.getTaskResult, s.getTaskError
 }
 
+// DeleteTask provides a test helper for Tasks HTTP handler assertions.
 func (s *tasksServiceStub) DeleteTask(_ context.Context, id int) error {
 	s.deleteTaskCalls++
 	s.deleteTaskID = id
@@ -104,6 +109,7 @@ func (s *tasksServiceStub) DeleteTask(_ context.Context, id int) error {
 	return s.deleteTaskError
 }
 
+// PathTask provides a test helper for Tasks HTTP handler assertions.
 func (s *tasksServiceStub) PathTask(
 	_ context.Context,
 	id int,
@@ -118,6 +124,7 @@ func (s *tasksServiceStub) PathTask(
 	return s.patchTaskResult, s.patchTaskError
 }
 
+// TestCreatedTask verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestCreatedTask(t *testing.T) {
 	description := "Prepare a clear report"
 	createdAt := time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC)
@@ -169,6 +176,7 @@ func TestCreatedTask(t *testing.T) {
 	}
 }
 
+// TestCreatedTaskRejectsInvalidRequest verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestCreatedTaskRejectsInvalidRequest(t *testing.T) {
 	longTitle := strings.Repeat("a", 101)
 	tests := []struct {
@@ -198,6 +206,7 @@ func TestCreatedTaskRejectsInvalidRequest(t *testing.T) {
 	}
 }
 
+// TestCreatedTaskReturnsServiceError verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestCreatedTaskReturnsServiceError(t *testing.T) {
 	service := newTasksServiceStub(t)
 	service.expectCreateTask = true
@@ -216,6 +225,7 @@ func TestCreatedTaskReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestGetTask verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestGetTask(t *testing.T) {
 	description := "Check the submitted work"
 	createdAt := time.Date(2026, 10, 21, 11, 12, 13, 0, time.UTC)
@@ -244,6 +254,7 @@ func TestGetTask(t *testing.T) {
 	}
 }
 
+// TestGetTaskRejectsInvalidID verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestGetTaskRejectsInvalidID(t *testing.T) {
 	tests := []struct {
 		name string
@@ -271,11 +282,13 @@ func TestGetTaskRejectsInvalidID(t *testing.T) {
 	}
 }
 
+// TestGetTaskReturnsServiceError verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestGetTaskReturnsServiceError(t *testing.T) {
 	assertTaskLookupError(t, core_errors.ErrNotFound, http.StatusNotFound)
 	assertTaskLookupError(t, errors.New("database unavailable"), http.StatusInternalServerError)
 }
 
+// assertTaskLookupError checks the expected response or service interaction in a test.
 func assertTaskLookupError(t *testing.T, serviceError error, wantStatus int) {
 	t.Helper()
 	service := newTasksServiceStub(t)
@@ -294,6 +307,7 @@ func assertTaskLookupError(t *testing.T, serviceError error, wantStatus int) {
 	}
 }
 
+// TestGetTasks verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestGetTasks(t *testing.T) {
 	description := "An optional description"
 	createdAt := time.Date(2026, 10, 22, 8, 0, 0, 0, time.UTC)
@@ -332,6 +346,7 @@ func TestGetTasks(t *testing.T) {
 	}
 }
 
+// TestGetTasksPassesOmittedQueryParametersAsNil verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestGetTasksPassesOmittedQueryParametersAsNil(t *testing.T) {
 	service := newTasksServiceStub(t)
 	service.expectGetTasks = true
@@ -350,6 +365,7 @@ func TestGetTasksPassesOmittedQueryParametersAsNil(t *testing.T) {
 	}
 }
 
+// TestGetTasksRejectsInvalidQueryParameter verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestGetTasksRejectsInvalidQueryParameter(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -376,6 +392,7 @@ func TestGetTasksRejectsInvalidQueryParameter(t *testing.T) {
 	}
 }
 
+// TestGetTasksReturnsServiceError verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestGetTasksReturnsServiceError(t *testing.T) {
 	service := newTasksServiceStub(t)
 	service.expectGetTasks = true
@@ -391,6 +408,7 @@ func TestGetTasksReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestPatchTaskPreservesOmittedNullAndFalseFields verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestPatchTaskPreservesOmittedNullAndFalseFields(t *testing.T) {
 	createdAt := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
 	wantTask := domain.NewTask(42, 5, "Existing title", nil, false, createdAt, nil, 13)
@@ -430,6 +448,7 @@ func TestPatchTaskPreservesOmittedNullAndFalseFields(t *testing.T) {
 	}
 }
 
+// TestPatchTaskPassesProvidedValues verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestPatchTaskPassesProvidedValues(t *testing.T) {
 	title := "Updated title"
 	description := "Updated description"
@@ -456,6 +475,7 @@ func TestPatchTaskPassesProvidedValues(t *testing.T) {
 	}
 }
 
+// TestPatchTaskRejectsInvalidPathOrBody verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestPatchTaskRejectsInvalidPathOrBody(t *testing.T) {
 	longTitle := strings.Repeat("a", 101)
 	longDescription := strings.Repeat("a", 1001)
@@ -492,6 +512,7 @@ func TestPatchTaskRejectsInvalidPathOrBody(t *testing.T) {
 	}
 }
 
+// TestPatchTaskReturnsServiceError verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestPatchTaskReturnsServiceError(t *testing.T) {
 	service := newTasksServiceStub(t)
 	service.expectPatchTask = true
@@ -509,6 +530,7 @@ func TestPatchTaskReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestDeleteTask verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestDeleteTask(t *testing.T) {
 	service := newTasksServiceStub(t)
 	service.expectDeleteTask = true
@@ -527,6 +549,7 @@ func TestDeleteTask(t *testing.T) {
 	}
 }
 
+// TestDeleteTaskRejectsInvalidID verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestDeleteTaskRejectsInvalidID(t *testing.T) {
 	service := newTasksServiceStub(t)
 	handler := NewTasksHTTPHandler(service)
@@ -542,6 +565,7 @@ func TestDeleteTaskRejectsInvalidID(t *testing.T) {
 	}
 }
 
+// TestDeleteTaskReturnsServiceError verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestDeleteTaskReturnsServiceError(t *testing.T) {
 	service := newTasksServiceStub(t)
 	service.expectDeleteTask = true
@@ -559,6 +583,7 @@ func TestDeleteTaskReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestTasksHTTPHandlerRoutes verifies the HTTP handler behavior and response expected by its test scenarios.
 func TestTasksHTTPHandlerRoutes(t *testing.T) {
 	handler := NewTasksHTTPHandler(newTasksServiceStub(t))
 	routes := handler.Routes()
@@ -601,6 +626,7 @@ func TestTasksHTTPHandlerRoutes(t *testing.T) {
 	}
 }
 
+// newTaskRequest creates a request or test fixture for the Tasks HTTP handler tests.
 func newTaskRequest(method, target, body string) *http.Request {
 	request := httptest.NewRequest(method, target, strings.NewReader(body))
 	return request.WithContext(
@@ -608,14 +634,17 @@ func newTaskRequest(method, target, body string) *http.Request {
 	)
 }
 
+// intPointerEquals provides a test helper for Tasks HTTP handler assertions.
 func intPointerEquals(got *int, want int) bool {
 	return got != nil && *got == want
 }
 
+// nullableStringEquals provides a test helper for Tasks HTTP handler assertions.
 func nullableStringEquals(got domain.Nullable[string], want string) bool {
 	return got.Set && got.Value != nil && *got.Value == want
 }
 
+// nullableBoolEquals provides a test helper for Tasks HTTP handler assertions.
 func nullableBoolEquals(got domain.Nullable[bool], want bool) bool {
 	return got.Set && got.Value != nil && *got.Value == want
 }
