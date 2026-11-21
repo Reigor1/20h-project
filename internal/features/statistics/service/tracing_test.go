@@ -13,12 +13,14 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
+// tracingStatisticsRepository records the context passed by the service and returns configured task data.
 type tracingStatisticsRepository struct {
 	ctx   context.Context
 	err   error
 	tasks []domain.Task
 }
 
+// GetTasks captures the service context so the test can inspect its active span.
 func (r *tracingStatisticsRepository) GetTasks(
 	ctx context.Context,
 	_ *int,
@@ -29,6 +31,7 @@ func (r *tracingStatisticsRepository) GetTasks(
 	return r.tasks, r.err
 }
 
+// newTracingTestProvider creates an in-memory tracer provider and registers its cleanup.
 func newTracingTestProvider(
 	t *testing.T,
 ) (*sdktrace.TracerProvider, *tracetest.InMemoryExporter) {
@@ -48,6 +51,8 @@ func newTracingTestProvider(
 	return tracerProvider, exporter
 }
 
+// TestGetStatisticsCreatesChildSpanAndPassesContextToRepository verifies the statistics span
+// is a child of the request span and that the repository receives that service span context.
 func TestGetStatisticsCreatesChildSpanAndPassesContextToRepository(t *testing.T) {
 	tracerProvider, exporter := newTracingTestProvider(t)
 	repository := &tracingStatisticsRepository{}
@@ -101,6 +106,8 @@ func TestGetStatisticsCreatesChildSpanAndPassesContextToRepository(t *testing.T)
 	}
 }
 
+// TestGetStatisticsMarksSpanErrorForInvalidDateRange checks invalid input marks the span as failed
+// and prevents the repository from being called.
 func TestGetStatisticsMarksSpanErrorForInvalidDateRange(t *testing.T) {
 	tracerProvider, exporter := newTracingTestProvider(t)
 	repository := &tracingStatisticsRepository{}
