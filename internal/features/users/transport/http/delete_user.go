@@ -18,6 +18,7 @@ import (
 // @Failure     404 {object} core_http_response.ErrorResponse "User not found"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /users/{id} [delete]
+// DeleteUser parses the user ID, delegates deletion to the service, and returns HTTP 204.
 func (h *UsersHTTPHandler) DeleteUser(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)
