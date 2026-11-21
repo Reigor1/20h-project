@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// TestNewHTTPServer verifies server construction from the configured address and handlers.
 func TestNewHTTPServer(t *testing.T) {
 	config := Config{
 		Addr:            "127.0.0.1:5050",
@@ -43,6 +44,7 @@ func TestNewHTTPServer(t *testing.T) {
 	}
 }
 
+// TestRegisterAPIRoutersStripsPrefixAndAppliesRouterMiddleware checks API prefix mounting and middleware.
 func TestRegisterAPIRoutersStripsPrefixAndAppliesRouterMiddleware(t *testing.T) {
 	events := []string{}
 	router := NewAPIVersionRouter(
@@ -75,6 +77,7 @@ func TestRegisterAPIRoutersStripsPrefixAndAppliesRouterMiddleware(t *testing.T) 
 	}
 }
 
+// TestRegisterAPIRoutersKeepsVersionsSeparate verifies that versioned route trees do not overlap.
 func TestRegisterAPIRoutersKeepsVersionsSeparate(t *testing.T) {
 	versionOne := NewAPIVersionRouter(ApiVersion1)
 	versionOne.RegisterRouts(Route{
@@ -120,6 +123,7 @@ func TestRegisterAPIRoutersKeepsVersionsSeparate(t *testing.T) {
 	}
 }
 
+// TestRegisterSwagger checks that the Swagger UI route is mounted on the HTTP server.
 func TestRegisterSwagger(t *testing.T) {
 	logger := &core_logger.Logger{Logger: zap.NewNop()}
 	server := NewHTTPServer(
@@ -161,6 +165,7 @@ func TestRegisterSwagger(t *testing.T) {
 	}
 }
 
+// TestRegisterAPIRoutersInstrumentsBusinessRoutes verifies observability instrumentation on business routes.
 func TestRegisterAPIRoutersInstrumentsBusinessRoutes(t *testing.T) {
 	var gotMethod string
 	var gotPath string
