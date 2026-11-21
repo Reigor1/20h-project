@@ -9,10 +9,12 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
+// OutboxMetricsSource exposes the current backlog size and age of the oldest unpublished event.
 type OutboxMetricsSource interface {
 	PendingStats(ctx context.Context) (pending int64, oldestEventAgeSeconds float64, err error)
 }
 
+// KafkaMetrics groups instruments used to observe Outbox publication and Activity consumption.
 type KafkaMetrics struct {
 	outboxPublished     metric.Int64Counter
 	outboxPublishErrors metric.Int64Counter
@@ -23,6 +25,8 @@ type KafkaMetrics struct {
 	activityDuration    metric.Float64Histogram
 }
 
+// NewKafkaMetrics creates Kafka processing instruments. When outboxSource is non-nil,
+// it also registers observable gauges backed by live Outbox repository statistics.
 func NewKafkaMetrics(
 	provider metric.MeterProvider,
 	outboxSource OutboxMetricsSource,
@@ -116,42 +120,49 @@ func NewKafkaMetrics(
 	return metrics, nil
 }
 
+// RecordOutboxPublished increments the counter after Kafka acknowledges an Outbox event.
 func (m *KafkaMetrics) RecordOutboxPublished(ctx context.Context, eventType string) {
 	if m != nil {
 		m.outboxPublished.Add(ctx, 1, metric.WithAttributes(attribute.String("event_type", eventType)))
 	}
 }
 
+// RecordOutboxPublishError records a failed attempt to publish an Outbox event.
 func (m *KafkaMetrics) RecordOutboxPublishError(ctx context.Context, eventType string) {
 	if m != nil {
 		m.outboxPublishErrors.Add(ctx, 1, metric.WithAttributes(attribute.String("event_type", eventType)))
 	}
 }
 
+// RecordActivityProcessed records an Activity event after persistence and offset commit succeed.
 func (m *KafkaMetrics) RecordActivityProcessed(ctx context.Context, eventType string) {
 	if m != nil {
 		m.activityProcessed.Add(ctx, 1, metric.WithAttributes(attribute.String("event_type", eventType)))
 	}
 }
 
+// RecordActivityFailed records an Activity event that reached the terminal failure path.
 func (m *KafkaMetrics) RecordActivityFailed(ctx context.Context, eventType string) {
 	if m != nil {
 		m.activityFailed.Add(ctx, 1, metric.WithAttributes(attribute.String("event_type", eventType)))
 	}
 }
 
+// RecordActivityDuplicate records a redelivery whose Activity record already exists.
 func (m *KafkaMetrics) RecordActivityDuplicate(ctx context.Context, eventType string) {
 	if m != nil {
 		m.activityDuplicate.Add(ctx, 1, metric.WithAttributes(attribute.String("event_type", eventType)))
 	}
 }
 
+// RecordActivityDLQMessage records a message successfully published to the Activity DLQ.
 func (m *KafkaMetrics) RecordActivityDLQMessage(ctx context.Context, eventType string) {
 	if m != nil {
 		m.activityDLQMessages.Add(ctx, 1, metric.WithAttributes(attribute.String("event_type", eventType)))
 	}
 }
 
+// RecordActivityProcessingDuration records elapsed processing time with event type and outcome dimensions.
 func (m *KafkaMetrics) RecordActivityProcessingDuration(
 	ctx context.Context,
 	duration time.Duration,
