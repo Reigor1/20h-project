@@ -7,6 +7,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 )
 
+// GetUsers returns users in ascending ID order using the supplied pagination values.
 func (r *UsersRepository) GetUsers(
 	ctx context.Context,
 	limit *int,
