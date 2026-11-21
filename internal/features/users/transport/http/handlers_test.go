@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// userServiceStub captures service or repository calls and returns configured test results.
 type userServiceStub struct {
 	t *testing.T
 
@@ -52,11 +53,13 @@ type userServiceStub struct {
 	deleteUserID     int
 }
 
+// newUserServiceStub creates the test fixture used by this test file.
 func newUserServiceStub(t *testing.T) *userServiceStub {
 	t.Helper()
 	return &userServiceStub{t: t}
 }
 
+// CreateUser implements the corresponding repository operation for tracing or service tests.
 func (s *userServiceStub) CreateUser(_ context.Context, user domain.User) (domain.User, error) {
 	if !s.expectCreateUser {
 		s.t.Fatal("unexpected UserService.CreateUser call")
@@ -66,6 +69,7 @@ func (s *userServiceStub) CreateUser(_ context.Context, user domain.User) (domai
 	return s.createUserResult, s.createUserError
 }
 
+// GetUser implements the corresponding repository operation for tracing or service tests.
 func (s *userServiceStub) GetUser(_ context.Context, id int) (domain.User, error) {
 	if !s.expectGetUser {
 		s.t.Fatal("unexpected UserService.GetUser call")
@@ -75,6 +79,7 @@ func (s *userServiceStub) GetUser(_ context.Context, id int) (domain.User, error
 	return s.getUserResult, s.getUserError
 }
 
+// GetUsers implements the corresponding repository operation for tracing or service tests.
 func (s *userServiceStub) GetUsers(_ context.Context, limit, offset *int) ([]domain.User, error) {
 	if !s.expectGetUsers {
 		s.t.Fatal("unexpected UserService.GetUsers call")
@@ -85,6 +90,7 @@ func (s *userServiceStub) GetUsers(_ context.Context, limit, offset *int) ([]dom
 	return s.getUsersResult, s.getUsersError
 }
 
+// PatchUser implements the corresponding repository operation for tracing or service tests.
 func (s *userServiceStub) PatchUser(
 	_ context.Context,
 	id int,
@@ -99,6 +105,7 @@ func (s *userServiceStub) PatchUser(
 	return s.patchUserResult, s.patchUserError
 }
 
+// DeleteUser implements the corresponding repository operation for tracing or service tests.
 func (s *userServiceStub) DeleteUser(_ context.Context, id int) error {
 	if !s.expectDeleteUser {
 		s.t.Fatal("unexpected UserService.DeleteUser call")
@@ -108,6 +115,7 @@ func (s *userServiceStub) DeleteUser(_ context.Context, id int) error {
 	return s.deleteUserError
 }
 
+// TestCreateUser verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateUser(t *testing.T) {
 	phoneNumber := "+1234567890"
 	createdUser := domain.NewUser(12, 3, "Ada Lovelace", &phoneNumber)
@@ -151,6 +159,7 @@ func TestCreateUser(t *testing.T) {
 	}
 }
 
+// TestCreateUserRejectsInvalidRequest verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateUserRejectsInvalidRequest(t *testing.T) {
 	tests := []struct {
 		name string
@@ -183,6 +192,7 @@ func TestCreateUserRejectsInvalidRequest(t *testing.T) {
 	}
 }
 
+// TestCreateUserReturnsServiceError verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateUserReturnsServiceError(t *testing.T) {
 	service := newUserServiceStub(t)
 	service.expectCreateUser = true
@@ -199,6 +209,7 @@ func TestCreateUserReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestGetUser verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUser(t *testing.T) {
 	phoneNumber := "+1234567890"
 	wantUser := domain.NewUser(42, 5, "Ada Lovelace", &phoneNumber)
@@ -234,6 +245,7 @@ func TestGetUser(t *testing.T) {
 	}
 }
 
+// TestGetUserRejectsInvalidID verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUserRejectsInvalidID(t *testing.T) {
 	service := newUserServiceStub(t)
 	handler := NewUsersHTTPHandler(service)
@@ -249,6 +261,7 @@ func TestGetUserRejectsInvalidID(t *testing.T) {
 	}
 }
 
+// TestGetUserReturnsServiceError verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUserReturnsServiceError(t *testing.T) {
 	service := newUserServiceStub(t)
 	service.expectGetUser = true
@@ -266,6 +279,7 @@ func TestGetUserReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestGetUsers verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUsers(t *testing.T) {
 	phoneNumber := "+1234567890"
 	users := []domain.User{
@@ -317,6 +331,7 @@ func TestGetUsers(t *testing.T) {
 	}
 }
 
+// TestGetUsersInvalidPagination verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUsersInvalidPagination(t *testing.T) {
 	tests := []struct {
 		name string
@@ -348,6 +363,7 @@ func TestGetUsersInvalidPagination(t *testing.T) {
 	}
 }
 
+// TestGetUsersReturnsServiceError verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUsersReturnsServiceError(t *testing.T) {
 	service := newUserServiceStub(t)
 	service.expectGetUsers = true
@@ -363,6 +379,7 @@ func TestGetUsersReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestPatchUser verifies the behavior and expected outcomes described by its test scenarios.
 func TestPatchUser(t *testing.T) {
 	patchedUser := domain.NewUser(42, 6, "Grace Hopper", nil)
 	service := newUserServiceStub(t)
@@ -408,6 +425,7 @@ func TestPatchUser(t *testing.T) {
 	}
 }
 
+// TestPatchUserRejectsInvalidPathOrBody verifies the behavior and expected outcomes described by its test scenarios.
 func TestPatchUserRejectsInvalidPathOrBody(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -453,6 +471,7 @@ func TestPatchUserRejectsInvalidPathOrBody(t *testing.T) {
 	}
 }
 
+// TestPatchUserReturnsServiceError verifies the behavior and expected outcomes described by its test scenarios.
 func TestPatchUserReturnsServiceError(t *testing.T) {
 	service := newUserServiceStub(t)
 	service.expectPatchUser = true
@@ -470,6 +489,7 @@ func TestPatchUserReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestDeleteUser verifies the behavior and expected outcomes described by its test scenarios.
 func TestDeleteUser(t *testing.T) {
 	service := newUserServiceStub(t)
 	service.expectDeleteUser = true
@@ -492,6 +512,7 @@ func TestDeleteUser(t *testing.T) {
 	}
 }
 
+// TestDeleteUserRejectsInvalidID verifies the behavior and expected outcomes described by its test scenarios.
 func TestDeleteUserRejectsInvalidID(t *testing.T) {
 	service := newUserServiceStub(t)
 	handler := NewUsersHTTPHandler(service)
@@ -507,6 +528,7 @@ func TestDeleteUserRejectsInvalidID(t *testing.T) {
 	}
 }
 
+// TestDeleteUserReturnsServiceError verifies the behavior and expected outcomes described by its test scenarios.
 func TestDeleteUserReturnsServiceError(t *testing.T) {
 	service := newUserServiceStub(t)
 	service.expectDeleteUser = true
@@ -524,6 +546,7 @@ func TestDeleteUserReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestUsersHTTPHandlerRoutes verifies the behavior and expected outcomes described by its test scenarios.
 func TestUsersHTTPHandlerRoutes(t *testing.T) {
 	handler := NewUsersHTTPHandler(newUserServiceStub(t))
 	routes := handler.Routes()
@@ -566,6 +589,7 @@ func TestUsersHTTPHandlerRoutes(t *testing.T) {
 	}
 }
 
+// newUserRequest creates the test fixture used by this test file.
 func newUserRequest(method, target, body string) *http.Request {
 	request := httptest.NewRequest(method, target, strings.NewReader(body))
 	return request.WithContext(

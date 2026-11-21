@@ -9,6 +9,8 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 )
 
+// GetTasks loads task records for statistics calculation, applying optional owner and
+// creation-time bounds. The upper time bound is exclusive and results are ordered by ID.
 func (r *StatisticsRepository) GetTasks(
 	ctx context.Context,
 	userID *int,

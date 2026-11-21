@@ -9,8 +9,10 @@ import (
 	"time"
 )
 
+// maxLoadWorkers defines a shared limit or value used by the test workflow.
 const maxLoadWorkers = 1_000
 
+// Config stores the data required by the corresponding test scenario.
 type Config struct {
 	BaseURL             string
 	Scenario            string
@@ -27,6 +29,7 @@ type Config struct {
 	ErrorRequestsCount  int
 }
 
+// loadConfig supports setup, execution, or verification of the corresponding test scenario.
 func loadConfig() (Config, error) {
 	var config Config
 	var stressWorkers string
@@ -185,6 +188,7 @@ func loadConfig() (Config, error) {
 	return config, nil
 }
 
+// parseWorkerStages parses and validates the supplied test configuration value.
 func parseWorkerStages(value string) ([]int, error) {
 	parts := strings.Split(value, ",")
 	workers := make([]int, 0, len(parts))

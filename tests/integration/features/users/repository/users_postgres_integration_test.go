@@ -16,6 +16,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// TestUsersRepositoryIntegration verifies the integration behavior represented by its test scenarios.
 func TestUsersRepositoryIntegration(t *testing.T) {
 	config := testutil.PostgresTestConfig(t)
 	if !strings.HasSuffix(strings.ToLower(config.Database), "_test") {
@@ -326,6 +327,7 @@ func TestUsersRepositoryIntegration(t *testing.T) {
 	})
 }
 
+// insertUser inserts fixture data into the PostgreSQL integration-test database.
 func insertUser(
 	t *testing.T,
 	ctx context.Context,
@@ -357,6 +359,7 @@ func insertUser(
 	return user
 }
 
+// registerUserCleanup registers cleanup for test data created by the scenario.
 func registerUserCleanup(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, id int) {
 	t.Helper()
 
@@ -365,6 +368,7 @@ func registerUserCleanup(t *testing.T, ctx context.Context, pool *core_pgx_pool.
 	})
 }
 
+// deleteUserDirectly removes test data or schema created by the integration scenario.
 func deleteUserDirectly(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, id int) {
 	t.Helper()
 
@@ -373,6 +377,7 @@ func deleteUserDirectly(t *testing.T, ctx context.Context, pool *core_pgx_pool.P
 	}
 }
 
+// readStoredUser reads the persisted entity for integration-test verification.
 func readStoredUser(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, id int) domain.User {
 	t.Helper()
 
@@ -395,6 +400,7 @@ func readStoredUser(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool,
 	return user
 }
 
+// countUsers returns the number of matching records for an integration assertion.
 func countUsers(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool) int {
 	t.Helper()
 
@@ -405,6 +411,7 @@ func countUsers(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool) int
 	return count
 }
 
+// userExists supports the corresponding integration or tracing test.
 func userExists(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, id int) bool {
 	t.Helper()
 
@@ -419,6 +426,7 @@ func userExists(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, id 
 	return exists
 }
 
+// assertPatchedUser checks the expected persisted state or database error.
 func assertPatchedUser(
 	t *testing.T,
 	ctx context.Context,
@@ -437,6 +445,7 @@ func assertPatchedUser(
 	}
 }
 
+// stringPointer creates a pointer value for integration-test fixtures.
 func stringPointer(value string) *string {
 	return &value
 }

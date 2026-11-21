@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
+// postgresInt32OverflowID defines a shared limit or value used by the test workflow.
 const postgresInt32OverflowID = "2147483648"
 
+// runErrorScenario executes the corresponding observability test workflow.
 func runErrorScenario(
 	ctx context.Context,
 	client *apiClient,

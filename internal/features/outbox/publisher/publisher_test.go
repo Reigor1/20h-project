@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// TestRetryDelay verifies capped exponential retry delays for successive attempts.
 func TestRetryDelay(t *testing.T) {
 	publisher := &Publisher{
 		config: Config{
@@ -66,12 +67,13 @@ func TestRetryDelay(t *testing.T) {
 	}
 }
 
-
+// shutdownTestRepository blocks Outbox operations to exercise publisher shutdown timing.
 type shutdownTestRepository struct {
 	entered chan struct{}
 	release chan struct{}
 }
 
+// ClaimPending blocks until released or its context is cancelled, simulating an active batch.
 func (r *shutdownTestRepository) ClaimPending(
 	ctx context.Context,
 	_ int,
@@ -87,6 +89,7 @@ func (r *shutdownTestRepository) ClaimPending(
 	}
 }
 
+// MarkPublished is a no-op for shutdown-focused publisher tests.
 func (*shutdownTestRepository) MarkPublished(
 	context.Context,
 	int64,
@@ -95,6 +98,7 @@ func (*shutdownTestRepository) MarkPublished(
 	return nil
 }
 
+// MarkFailed is a no-op for shutdown-focused publisher tests.
 func (*shutdownTestRepository) MarkFailed(
 	context.Context,
 	int64,
@@ -105,8 +109,10 @@ func (*shutdownTestRepository) MarkFailed(
 	return nil
 }
 
+// shutdownTestProducer implements a producer that immediately acknowledges test batches.
 type shutdownTestProducer struct{}
 
+// PublishBatch acknowledges each supplied message for deterministic shutdown tests.
 func (shutdownTestProducer) PublishBatch(
 	context.Context,
 	string,
@@ -115,6 +121,7 @@ func (shutdownTestProducer) PublishBatch(
 	return nil
 }
 
+// TestRunWaitsForActiveBatchAfterShutdownSignal verifies that shutdown allows an active batch to finish.
 func TestRunWaitsForActiveBatchAfterShutdownSignal(t *testing.T) {
 	repository := &shutdownTestRepository{
 		entered: make(chan struct{}),
@@ -123,12 +130,12 @@ func TestRunWaitsForActiveBatchAfterShutdownSignal(t *testing.T) {
 
 	publisher, err := NewPublisher(
 		Config{
-			Topic:          "task-events",
-			PollInterval:   time.Millisecond,
-			BatchSize:      10,
-			LeaseDuration:  time.Minute,
-			RetryBaseDelay: time.Second,
-			RetryMaxDelay:  time.Minute,
+			Topic:           "task-events",
+			PollInterval:    time.Millisecond,
+			BatchSize:       10,
+			LeaseDuration:   time.Minute,
+			RetryBaseDelay:  time.Second,
+			RetryMaxDelay:   time.Minute,
 			ShutdownTimeout: time.Second,
 		},
 		repository,
@@ -167,6 +174,7 @@ func TestRunWaitsForActiveBatchAfterShutdownSignal(t *testing.T) {
 	}
 }
 
+// TestRunCancelsActiveBatchAfterShutdownGracePeriod checks forced cancellation after the grace period.
 func TestRunCancelsActiveBatchAfterShutdownGracePeriod(t *testing.T) {
 	repository := &shutdownTestRepository{
 		entered: make(chan struct{}),

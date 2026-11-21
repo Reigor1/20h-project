@@ -8,6 +8,8 @@ import (
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 )
 
+// GetIntPathValue reads a named URL path value and parses it as an integer.
+// Missing and malformed values are wrapped with ErrInvalidArgument.
 func GetIntPathValue(r *http.Request, key string) (int, error) {
 	pathValue := r.PathValue(key)
 	if pathValue == "" {

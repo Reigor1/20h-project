@@ -9,6 +9,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
+// ErrAssignmentLost indicates that a message belongs to a partition no longer owned by this Consumer.
 var ErrAssignmentLost = errors.New("Kafka partition assignment lost")
 
 type partitionKey struct {
@@ -16,6 +17,9 @@ type partitionKey struct {
 	partition int32
 }
 
+// Message is the Consumer's application-facing representation of a Kafka record.
+// assignmentEpoch and native retain the ownership generation and original client message
+// required to reject commits after a partition has been revoked and reassigned.
 type Message struct {
 	Value     []byte
 	Key       []byte
@@ -29,6 +33,7 @@ type Message struct {
 	native *kafka.Message
 }
 
+// PollResult contains either a delivered message or a polling error and its fatality classification.
 type PollResult struct {
 	Message *Message
 	Err     error
@@ -45,6 +50,8 @@ type Consumer struct {
 	rebalanceErr error
 }
 
+// NewConsumer creates a Kafka Consumer with automatic offset commits disabled.
+// Offsets are committed explicitly after application processing succeeds.
 func NewConsumer(config Config) (*Consumer, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("validate Kafka Consumer config: %w", err)
@@ -80,6 +87,7 @@ func NewConsumer(config Config) (*Consumer, error) {
 	}, nil
 }
 
+// Subscribe joins the Consumer Group for one topic and installs the rebalance handler.
 func (c *Consumer) Subscribe(topic string) error {
 	if strings.TrimSpace(topic) == "" {
 		return fmt.Errorf("Kafka topic must not be empty")
@@ -92,6 +100,8 @@ func (c *Consumer) Subscribe(topic string) error {
 	return nil
 }
 
+// handleRebalance applies eager or cooperative partition assignment changes and tracks
+// assignment epochs so messages from revoked ownership cannot be committed later.
 func (c *Consumer) handleRebalance(
 	client *kafka.Consumer,
 	event kafka.Event,
@@ -180,6 +190,7 @@ func (c *Consumer) handleRebalance(
 	return nil
 }
 
+// getPartitionKey converts a client partition descriptor into the map key used by Consumer.
 func getPartitionKey(partition kafka.TopicPartition) partitionKey {
 	var topic string
 
@@ -193,6 +204,7 @@ func getPartitionKey(partition kafka.TopicPartition) partitionKey {
 	}
 }
 
+// Pause suspends fetching from all currently assigned partitions during retry backoff.
 func (c *Consumer) Pause() error {
 	if c.paused {
 		return nil
@@ -218,6 +230,7 @@ func (c *Consumer) Pause() error {
 	return nil
 }
 
+// Resume re-enables fetching from the Consumer's current assignment.
 func (c *Consumer) Resume() error {
 	if !c.paused {
 		return nil
@@ -286,6 +299,8 @@ func (c *Consumer) Assign(
 	return nil
 }
 
+// Poll waits for a Kafka event and converts records and client errors into PollResult.
+// Rebalance callback failures are surfaced as fatal polling errors.
 func (c *Consumer) Poll(timeout time.Duration) PollResult {
 	c.rebalanceErr = nil
 
@@ -350,6 +365,7 @@ func (c *Consumer) Poll(timeout time.Duration) PollResult {
 	}
 }
 
+// IsAssigned reports whether the message still belongs to the current partition assignment epoch.
 func (c *Consumer) IsAssigned(message *Message) bool {
 	if message == nil {
 		return false
@@ -368,6 +384,7 @@ func (c *Consumer) IsAssigned(message *Message) bool {
 	return c.assignmentEpoch[key] == message.assignmentEpoch
 }
 
+// CommitMessage commits the record offset only while its original partition assignment is valid.
 func (c *Consumer) CommitMessage(message *Message) error {
 	if message == nil || message.native == nil {
 		return fmt.Errorf("Kafka message must not be nil")
@@ -389,6 +406,7 @@ func (c *Consumer) CommitMessage(message *Message) error {
 	return nil
 }
 
+// Close releases the underlying Kafka Consumer client.
 func (c *Consumer) Close() error {
 	if c == nil || c.client == nil {
 		return nil
@@ -397,12 +415,15 @@ func (c *Consumer) Close() error {
 	return c.client.Close()
 }
 
+// isFatalKafkaError reports whether a client error makes the Consumer unusable.
 func isFatalKafkaError(err error) bool {
 	var kafkaErr kafka.Error
 
 	return errors.As(err, &kafkaErr) && kafkaErr.IsFatal()
 }
 
+// IsRetriableError classifies transient Kafka client errors that may succeed on retry.
+// Fatal and non-Kafka errors are not considered retriable.
 func IsRetriableError(err error) bool {
 	var kafkaErr kafka.Error
 

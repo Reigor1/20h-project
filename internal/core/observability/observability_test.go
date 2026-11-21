@@ -20,6 +20,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// TestInstrumentHTTPRouteCreatesServerSpan verifies route-template attributes and
+// propagation of an incoming W3C trace context into an HTTP server span.
 func TestInstrumentHTTPRouteCreatesServerSpan(t *testing.T) {
 	meterProvider := sdkmetric.NewMeterProvider()
 
@@ -128,6 +130,8 @@ func TestInstrumentHTTPRouteCreatesServerSpan(t *testing.T) {
 	}
 }
 
+// TestInstrumentHTTPRouteCreatesPostgresChildSpan verifies HTTP-to-PostgreSQL span parenting
+// and confirms that sensitive SQL and connection details are redacted.
 func TestInstrumentHTTPRouteCreatesPostgresChildSpan(t *testing.T) {
 	meterProvider := sdkmetric.NewMeterProvider()
 
@@ -301,6 +305,7 @@ func TestInstrumentHTTPRouteCreatesPostgresChildSpan(t *testing.T) {
 	}
 }
 
+// findSpanAttribute returns the value for a span attribute with the requested key.
 func findSpanAttribute(
 	attributes []attribute.KeyValue,
 	key attribute.Key,
@@ -314,6 +319,8 @@ func findSpanAttribute(
 	return attribute.Value{}, false
 }
 
+// TestShutdownFlushesTracesAndMetrics verifies that both OTLP exporters flush pending data
+// when the Observability instance is shut down.
 func TestShutdownFlushesTracesAndMetrics(t *testing.T) {
 	var mu sync.Mutex
 

@@ -19,6 +19,7 @@ const (
 	readTimeout = 30 * time.Second
 )
 
+// main runs the DLQ replay command and exits with a non-zero status on failure.
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "Activity DLQ Replay failed:", err)
@@ -26,6 +27,8 @@ func main() {
 	}
 }
 
+// run reads one DLQ record at the requested partition and offset, validates its source metadata,
+// and republishes the original key and payload to the recorded source topic and partition.
 func run() error {
 	partition := flag.Int("partition", -1, "DLQ partition")
 	offset := flag.Int64("offset", -1, "DLQ offset")

@@ -9,6 +9,7 @@ const (
 	defaultMetricsExportInterval = 10 * time.Second
 )
 
+// Config identifies the instrumented service and controls periodic metric export.
 type Config struct {
 	ServiceName           string
 	ServiceVersion        string
@@ -16,6 +17,7 @@ type Config struct {
 	MetricsExportInterval time.Duration
 }
 
+// withDefaults fills omitted telemetry settings with development-safe defaults.
 func (c Config) withDefaults() Config {
 	if c.ServiceName == "" {
 		c.ServiceName = defaultServiceName

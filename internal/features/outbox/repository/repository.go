@@ -11,12 +11,15 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
+// ErrLeaseLost indicates that an Outbox update no longer owns the event's lease token.
 var ErrLeaseLost = errors.New("outbox lease lost")
 
+// OutboxRepository persists event envelopes and manages their publication leases in PostgreSQL.
 type OutboxRepository struct {
 	pool core_postgres_pool.Pool
 }
 
+// ClaimedEvent contains an event reserved for publication and the token required to update it.
 type ClaimedEvent struct {
 	ID          int64
 	Event       core_events.Envelope
@@ -26,6 +29,7 @@ type ClaimedEvent struct {
 	LeaseToken  string
 }
 
+// NewOutboxRepository creates an Outbox repository backed by the supplied PostgreSQL pool.
 func NewOutboxRepository(
 	pool core_postgres_pool.Pool,
 ) *OutboxRepository {
@@ -34,6 +38,8 @@ func NewOutboxRepository(
 	}
 }
 
+// Create validates and inserts an event through the caller's executor, preserving the
+// caller's transaction boundary, and stores the current W3C trace context with it.
 func (r *OutboxRepository) Create(
 	ctx context.Context,
 	executor core_postgres_pool.Executor,
@@ -83,6 +89,8 @@ func (r *OutboxRepository) Create(
 	return nil
 }
 
+// ClaimPending atomically leases eligible events using SKIP LOCKED. Earlier unpublished
+// events for the same aggregate block later versions to preserve per-aggregate ordering.
 func (r *OutboxRepository) ClaimPending(
 	ctx context.Context,
 	limit int,
@@ -201,6 +209,7 @@ func (r *OutboxRepository) ClaimPending(
 	return events, nil
 }
 
+// MarkPublished marks an event delivered only when the supplied lease token still owns it.
 func (r *OutboxRepository) MarkPublished(
 	ctx context.Context,
 	id int64,
@@ -237,6 +246,8 @@ func (r *OutboxRepository) MarkPublished(
 	return nil
 }
 
+// MarkFailed increments the attempt count, stores a bounded error message, schedules
+// the next attempt, and releases the lease when the token is still valid.
 func (r *OutboxRepository) MarkFailed(
 	ctx context.Context,
 	id int64,
@@ -291,6 +302,7 @@ func (r *OutboxRepository) MarkFailed(
 	return nil
 }
 
+// PendingStats returns the count of all unpublished events and the age of the oldest one.
 func (r *OutboxRepository) PendingStats(
 	ctx context.Context,
 ) (pending int64, oldestEventAgeSeconds float64, err error) {

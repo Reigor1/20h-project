@@ -7,6 +7,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 )
 
+// CreateUser inserts a user and maps the returned database row to the domain model.
 func (r *UsersRepository) CreateUser(
 	ctx context.Context,
 	user domain.User,

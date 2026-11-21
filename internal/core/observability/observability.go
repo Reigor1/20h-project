@@ -20,6 +20,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Observability owns the application's OpenTelemetry providers, propagators,
+// and optional instrumentation integrations that require explicit shutdown.
 type Observability struct {
 	meterProvider  *sdkmetric.MeterProvider
 	tracerProvider *sdktrace.TracerProvider
@@ -30,6 +32,8 @@ type Observability struct {
 	redisMetrics *redisotel_native.ObservabilityInstance
 }
 
+// New initializes OTLP trace and metric exporters, SDK providers, and W3C propagators.
+// Partially initialized providers are shut down if a later initialization step fails.
 func New(ctx context.Context, config Config) (*Observability, error) {
 	config = config.withDefaults()
 
@@ -101,6 +105,7 @@ func New(ctx context.Context, config Config) (*Observability, error) {
 	}, nil
 }
 
+// newResource builds the shared OpenTelemetry resource describing this service deployment.
 func newResource(
 	ctx context.Context,
 	config Config,
@@ -180,6 +185,8 @@ func (o *Observability) ActiveRequestsCounter() metric.Int64UpDownCounter {
 	return o.activeRequests
 }
 
+// Shutdown stops optional instrumentation and flushes both telemetry providers.
+// The caller should invoke it before closing resources queried by metric callbacks.
 func (o *Observability) Shutdown(ctx context.Context) error {
 	if o == nil {
 		return nil
@@ -210,6 +217,7 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 
 const providerInitializationCleanupTimeout = 5 * time.Second
 
+// shutdownProviders flushes and stops whichever SDK providers were successfully initialized.
 func shutdownProviders(
 	ctx context.Context,
 	tracerProvider *sdktrace.TracerProvider,
@@ -238,6 +246,7 @@ func shutdownProviders(
 	return shutdownErr
 }
 
+// shutdownProvidersAfterInitializationFailure gives partially initialized providers a bounded cleanup window.
 func shutdownProvidersAfterInitializationFailure(
 	tracerProvider *sdktrace.TracerProvider,
 	meterProvider *sdkmetric.MeterProvider,

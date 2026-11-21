@@ -7,6 +7,7 @@ import (
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 )
 
+// DeleteUser removes a user by ID and returns the shared not-found error when no row was deleted.
 func (r *UsersRepository) DeleteUser(
 	ctx context.Context,
 	id int,

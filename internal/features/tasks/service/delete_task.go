@@ -7,6 +7,8 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// DeleteTask loads the task, checks its version and ownership, and deletes it
+// while recording the deletion event within the same transaction.
 func (s *TasksService) DeleteTask(
 	ctx context.Context,
 	id int,

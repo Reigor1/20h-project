@@ -11,6 +11,8 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
+// SanitizingTracer delegates pgx tracing to otelpgx after removing sensitive
+// statement, identifier, and connection-error details from trace attributes.
 type SanitizingTracer struct {
 	*otelpgx.Tracer
 }
@@ -55,6 +57,8 @@ func NewSanitizingTracer(
 	}
 }
 
+// sanitizedError exposes a generic message to telemetry while preserving the original
+// error for errors.Is and errors.As through Unwrap.
 type sanitizedError struct {
 	cause error
 }
@@ -67,6 +71,7 @@ func (e sanitizedError) Unwrap() error {
 	return e.cause
 }
 
+// sanitizeError replaces the externally visible error message without losing its cause.
 func sanitizeError(err error) error {
 	if err == nil {
 		return nil
@@ -75,6 +80,7 @@ func sanitizeError(err error) error {
 	return sanitizedError{cause: err}
 }
 
+// TraceQueryEnd sanitizes query errors before forwarding the completed query span.
 func (t *SanitizingTracer) TraceQueryEnd(
 	ctx context.Context,
 	conn *pgx.Conn,
@@ -84,6 +90,7 @@ func (t *SanitizingTracer) TraceQueryEnd(
 	t.Tracer.TraceQueryEnd(ctx, conn, data)
 }
 
+// TraceBatchQuery sanitizes batch-query errors before forwarding the trace event.
 func (t *SanitizingTracer) TraceBatchQuery(
 	ctx context.Context,
 	conn *pgx.Conn,
@@ -93,6 +100,7 @@ func (t *SanitizingTracer) TraceBatchQuery(
 	t.Tracer.TraceBatchQuery(ctx, conn, data)
 }
 
+// TraceBatchEnd sanitizes the batch completion error before forwarding it to otelpgx.
 func (t *SanitizingTracer) TraceBatchEnd(
 	ctx context.Context,
 	conn *pgx.Conn,
@@ -102,6 +110,7 @@ func (t *SanitizingTracer) TraceBatchEnd(
 	t.Tracer.TraceBatchEnd(ctx, conn, data)
 }
 
+// TraceCopyFromStart redacts the destination table name before tracing a COPY operation.
 func (t *SanitizingTracer) TraceCopyFromStart(
 	ctx context.Context,
 	conn *pgx.Conn,
@@ -111,6 +120,7 @@ func (t *SanitizingTracer) TraceCopyFromStart(
 	return t.Tracer.TraceCopyFromStart(ctx, conn, data)
 }
 
+// TraceCopyFromEnd sanitizes COPY errors before forwarding the completion event.
 func (t *SanitizingTracer) TraceCopyFromEnd(
 	ctx context.Context,
 	conn *pgx.Conn,
@@ -120,6 +130,7 @@ func (t *SanitizingTracer) TraceCopyFromEnd(
 	t.Tracer.TraceCopyFromEnd(ctx, conn, data)
 }
 
+// TracePrepareStart removes the prepared statement name before tracing preparation.
 func (t *SanitizingTracer) TracePrepareStart(
 	ctx context.Context,
 	conn *pgx.Conn,
@@ -129,6 +140,7 @@ func (t *SanitizingTracer) TracePrepareStart(
 	return t.Tracer.TracePrepareStart(ctx, conn, data)
 }
 
+// TracePrepareEnd sanitizes preparation errors before forwarding the trace event.
 func (t *SanitizingTracer) TracePrepareEnd(
 	ctx context.Context,
 	conn *pgx.Conn,
@@ -138,6 +150,7 @@ func (t *SanitizingTracer) TracePrepareEnd(
 	t.Tracer.TracePrepareEnd(ctx, conn, data)
 }
 
+// TraceConnectEnd sanitizes connection errors before forwarding connection telemetry.
 func (t *SanitizingTracer) TraceConnectEnd(
 	ctx context.Context,
 	data pgx.TraceConnectEndData,
@@ -146,6 +159,7 @@ func (t *SanitizingTracer) TraceConnectEnd(
 	t.Tracer.TraceConnectEnd(ctx, data)
 }
 
+// TraceAcquireEnd sanitizes pool-acquisition errors before forwarding the trace event.
 func (t *SanitizingTracer) TraceAcquireEnd(
 	ctx context.Context,
 	pool *pgxpool.Pool,

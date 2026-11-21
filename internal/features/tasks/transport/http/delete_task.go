@@ -18,6 +18,7 @@ import (
 // @Failure     404 {object} core_http_response.ErrorResponse "Task not found"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router       /tasks/{id} [delete]
+// DeleteTask parses the task ID, delegates deletion to the service, and returns HTTP 204.
 func (h *TasksHTTPHandler) DeleteTask(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)

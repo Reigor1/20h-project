@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// EventType identifies the business operation represented by an event.
 type EventType string
 
 const (
@@ -31,6 +32,8 @@ var (
 	ErrUnsupportedSchemaVersion = errors.New("unsupported schema version")
 )
 
+// Envelope is the versioned event contract stored in the Outbox and published to Kafka.
+// Payload contains the event-specific JSON object while the remaining fields describe its aggregate.
 type Envelope struct {
 	EventID          string          `json:"event_id"`
 	EventType        EventType       `json:"event_type"`
@@ -42,6 +45,8 @@ type Envelope struct {
 	Payload          json.RawMessage `json:"payload"`
 }
 
+// Validate checks the envelope identity, supported event/schema, aggregate metadata,
+// timestamp, and the presence of a JSON-object payload.
 func (e Envelope) Validate() error {
 	eventID, err := uuid.Parse(e.EventID)
 	if err != nil || eventID == uuid.Nil {
@@ -135,6 +140,7 @@ func (e Envelope) Validate() error {
 	return nil
 }
 
+// Marshal validates an event envelope before encoding it as JSON.
 func Marshal(envelope Envelope) ([]byte, error) {
 	if err := envelope.Validate(); err != nil {
 		return nil, fmt.Errorf("validate event envelope: %w", err)
@@ -148,6 +154,8 @@ func Marshal(envelope Envelope) ([]byte, error) {
 	return data, nil
 }
 
+// Unmarshal decodes JSON into an envelope and validates the resulting event contract.
+// Malformed JSON and invalid envelope metadata are returned as distinguishable errors.
 func Unmarshal(data []byte) (Envelope, error) {
 	var envelope Envelope
 

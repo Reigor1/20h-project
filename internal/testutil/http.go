@@ -9,6 +9,7 @@ import (
 )
 
 // AssertJSONContentType checks that an HTTP JSON response declares application/json.
+// AssertJSONContentType fails the test unless the response declares application/json.
 func AssertJSONContentType(t *testing.T, response *httptest.ResponseRecorder) {
 	t.Helper()
 
@@ -18,6 +19,7 @@ func AssertJSONContentType(t *testing.T, response *httptest.ResponseRecorder) {
 }
 
 // AssertJSONStatus checks the response status and JSON content type.
+// AssertJSONStatus checks the expected status code and JSON content type.
 func AssertJSONStatus(
 	t *testing.T,
 	response *httptest.ResponseRecorder,
@@ -38,6 +40,8 @@ func AssertJSONStatus(
 }
 
 // AssertErrorResponse checks the status and required fields of a JSON error response.
+// AssertErrorResponse validates the status and checks that the decoded error payload
+// contains both its error identifier and human-readable message.
 func AssertErrorResponse(
 	t *testing.T,
 	response *httptest.ResponseRecorder,

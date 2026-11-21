@@ -7,6 +7,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
+// Config contains PostgreSQL connection credentials and the timeout applied to repository operations.
 type Config struct {
 	Host     string        `envconfig:"HOST" required:"true"`
 	Port     string        `envconfig:"PORT" default:"5432"`
@@ -16,6 +17,7 @@ type Config struct {
 	Timeout  time.Duration `envconfig:"TIMEOUT" required:"true"`
 }
 
+// NewConfig loads PostgreSQL connection settings from POSTGRES_* environment variables.
 func NewConfig() (Config, error) {
 	var config Config
 
@@ -26,6 +28,7 @@ func NewConfig() (Config, error) {
 	return config, nil
 }
 
+// NewConfigMust returns PostgreSQL configuration or panics when required settings are missing.
 func NewConfigMust() Config {
 	config, err := NewConfig()
 	if err != nil {

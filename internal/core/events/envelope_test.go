@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// validEnvelope returns a minimal valid event used by envelope tests.
 func validEnvelope() Envelope {
 	return Envelope{
 		EventID:          "123e4567-e89b-12d3-a456-426614174000",
@@ -23,6 +24,7 @@ func validEnvelope() Envelope {
 	}
 }
 
+// TestMarshalAndUnmarshal verifies that a valid envelope survives JSON round-tripping.
 func TestMarshalAndUnmarshal(t *testing.T) {
 	want := validEnvelope()
 
@@ -73,6 +75,7 @@ func TestMarshalAndUnmarshal(t *testing.T) {
 	}
 }
 
+// TestEnvelopeValidate checks required metadata, supported event types, and payload constraints.
 func TestEnvelopeValidate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -197,6 +200,7 @@ func TestEnvelopeValidate(t *testing.T) {
 	}
 }
 
+// TestMarshalRejectsInvalidEnvelope ensures invalid event contracts are not serialized.
 func TestMarshalRejectsInvalidEnvelope(t *testing.T) {
 	envelope := validEnvelope()
 	envelope.SchemaVersion = 2
@@ -211,6 +215,7 @@ func TestMarshalRejectsInvalidEnvelope(t *testing.T) {
 	}
 }
 
+// TestUnmarshalRejectsUnsupportedSchemaVersion verifies schema-version compatibility checks.
 func TestUnmarshalRejectsUnsupportedSchemaVersion(t *testing.T) {
 	data, err := json.Marshal(validEnvelope())
 	if err != nil {
@@ -239,6 +244,7 @@ func TestUnmarshalRejectsUnsupportedSchemaVersion(t *testing.T) {
 	}
 }
 
+// TestUnmarshalRejectsMalformedJSON checks that invalid JSON is classified as malformed input.
 func TestUnmarshalRejectsMalformedJSON(t *testing.T) {
 	_, err := Unmarshal([]byte(`{"event_id":`))
 
@@ -250,6 +256,7 @@ func TestUnmarshalRejectsMalformedJSON(t *testing.T) {
 	}
 }
 
+// compactJSON normalizes JSON whitespace so test cases can compare serialized payloads.
 func compactJSON(t *testing.T, data []byte) string {
 	t.Helper()
 

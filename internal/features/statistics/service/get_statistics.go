@@ -50,14 +50,15 @@ func (s *StatisticsService) GetStatistics(
 	statistics := calcStatistics(tasks)
 
 	if cacheable && s.cache != nil {
-        if err := s.cache.Set(ctx, statistics, globalStatisticsCacheTTL); err != nil {
-            span.RecordError(fmt.Errorf("set statistics cache: %w", err))
-        }
-    }
+		if err := s.cache.Set(ctx, statistics, globalStatisticsCacheTTL); err != nil {
+			span.RecordError(fmt.Errorf("set statistics cache: %w", err))
+		}
+	}
 
 	return statistics, nil
 }
 
+// calcStatistics derives aggregate task counts and completion-time statistics from task records.
 func calcStatistics(tasks []domain.Task) domain.Statistics {
 	if len(tasks) == 0 {
 		return domain.NewStatistics(0, 0, nil, nil)

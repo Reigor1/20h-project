@@ -9,6 +9,7 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 )
 
+// GetTasksResponse is the JSON array returned by the task listing endpoint.
 type GetTasksResponse []TaskDTOResponse
 
 // GetTasks     godoc
@@ -23,6 +24,8 @@ type GetTasksResponse []TaskDTOResponse
 // @Failure     400 {object} core_http_response.ErrorResponse "Bad request"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /tasks [get]
+// GetTasks parses optional owner and pagination filters, loads matching tasks,
+// and writes them as a JSON response.
 func (h *TasksHTTPHandler) GetTasks(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)
@@ -56,6 +59,7 @@ func (h *TasksHTTPHandler) GetTasks(rw http.ResponseWriter, r *http.Request) {
 	)
 }
 
+// getUserIDLimitOffsetQueryParams parses the optional user_id, limit, and offset values.
 func getUserIDLimitOffsetQueryParams(r *http.Request) (*int, *int, *int, error) {
 	const (
 		userIDQueryParamKey = "user_id"

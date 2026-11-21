@@ -6,6 +6,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 )
 
+// TaskDTOResponse is the JSON representation of a task returned by the API.
 type TaskDTOResponse struct {
 	ID           int        `json:"id"             example:"7"`
 	Version      int        `json:"version"        example:"3"`
@@ -17,6 +18,7 @@ type TaskDTOResponse struct {
 	AuthorUserID int        `json:"author_user_id" example:"2"`
 }
 
+// taskDTOFromDomain maps a domain Task to the public HTTP response shape.
 func taskDTOFromDomain(task domain.Task) TaskDTOResponse {
 	return TaskDTOResponse{
 		ID:           task.ID,
@@ -30,6 +32,7 @@ func taskDTOFromDomain(task domain.Task) TaskDTOResponse {
 	}
 }
 
+// tasksDTOFromDomain converts a slice of domain tasks into response DTOs.
 func tasksDTOFromDomain(tasks []domain.Task) []TaskDTOResponse {
 	tasksDTO := make([]TaskDTOResponse, len(tasks))
 

@@ -8,6 +8,7 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// CreateUser validates the new user and persists it through the user repository.
 func (s *UsersService) CreateUser(
 	ctx context.Context,
 	user domain.User,

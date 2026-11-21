@@ -6,6 +6,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 )
 
+// TaskModel represents the task columns selected for statistics aggregation.
 type TaskModel struct {
 	ID           int
 	Version      int
@@ -17,6 +18,7 @@ type TaskModel struct {
 	AuthorUserID int
 }
 
+// taskDomainFromModel converts one statistics query row into a domain Task.
 func taskDomainFromModel(taskModel TaskModel) domain.Task {
 	return domain.NewTask(
 		taskModel.ID,
@@ -30,6 +32,7 @@ func taskDomainFromModel(taskModel TaskModel) domain.Task {
 	)
 }
 
+// taskDomainsFromModels converts all selected persistence rows into domain tasks.
 func taskDomainsFromModels(taskModels []TaskModel) []domain.Task {
 	domains := make([]domain.Task, len(taskModels))
 

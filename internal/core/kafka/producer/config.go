@@ -8,6 +8,8 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
+// Config contains Kafka Producer connection, batching, compression, delivery,
+// and local queue limits.
 type Config struct {
 	BootstrapServers string `envconfig:"BOOTSTRAP_SERVERS" default:"localhost:29092,localhost:39092,localhost:49092"`
 	ClientID         string `envconfig:"CLIENT_ID" default:"20h-project-todoapp"`
@@ -22,6 +24,7 @@ type Config struct {
 	QueueMaxKilobytes int `envconfig:"QUEUE_BUFFERING_MAX_KB" default:"65536"`
 }
 
+// NewConfig loads KAFKA_* Producer settings from the environment and validates them.
 func NewConfig() (Config, error) {
 	var config Config
 
@@ -36,6 +39,7 @@ func NewConfig() (Config, error) {
 	return config, nil
 }
 
+// Validate rejects invalid broker, batching, timeout, queue, and compression settings.
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.BootstrapServers) == "" {
 		return fmt.Errorf("Kafka bootstrap servers must not be empty")

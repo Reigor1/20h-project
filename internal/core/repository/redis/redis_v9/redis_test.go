@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
+// TestRedisGetSetDelete exercises the cache adapter's basic read, write, and delete operations.
 func TestRedisGetSetDelete(t *testing.T) {
 	server := miniredis.RunT(t)
 	cache := newTestRedis(t, server.Addr())
@@ -55,6 +56,7 @@ func TestRedisGetSetDelete(t *testing.T) {
 	}
 }
 
+// TestRedisSetRejectsNonPositiveTTL verifies that cache entries require a positive expiration.
 func TestRedisSetRejectsNonPositiveTTL(t *testing.T) {
 	server := miniredis.RunT(t)
 	cache := newTestRedis(t, server.Addr())
@@ -80,6 +82,8 @@ func TestRedisSetRejectsNonPositiveTTL(t *testing.T) {
 	}
 }
 
+// TestNewRedisFailsWhenInitialPingCannotReachServer checks startup failure and cleanup
+// when the configured Redis endpoint is unavailable.
 func TestNewRedisFailsWhenInitialPingCannotReachServer(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -105,6 +109,7 @@ func TestNewRedisFailsWhenInitialPingCannotReachServer(t *testing.T) {
 	}
 }
 
+// TestRedisCloseIsIdempotent verifies that repeated client shutdown calls are safe.
 func TestRedisCloseIsIdempotent(t *testing.T) {
 	server := miniredis.RunT(t)
 	cache := newTestRedis(t, server.Addr())
@@ -117,6 +122,7 @@ func TestRedisCloseIsIdempotent(t *testing.T) {
 	}
 }
 
+// newTestRedis starts a test Redis server and registers its cleanup with the test.
 func newTestRedis(t *testing.T, addr string) *Redis {
 	t.Helper()
 

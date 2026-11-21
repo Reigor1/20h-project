@@ -9,6 +9,7 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 )
 
+// GetActivitiesResponse is the JSON array returned by the Activity listing endpoint.
 type GetActivitiesResponse []ActivityDTOResponse
 
 // GetActivities godoc
@@ -26,6 +27,7 @@ type GetActivitiesResponse []ActivityDTOResponse
 // @Failure     400 {object} core_http_response.ErrorResponse "Bad request"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /tasks/{task_id}/activity [get]
+// GetActivities parses pagination, calls the service, and writes the Activity list response.
 func (h *ActivityHTTPHandler) GetActivities(
 	rw http.ResponseWriter,
 	r *http.Request,
@@ -79,6 +81,7 @@ func (h *ActivityHTTPHandler) GetActivities(
 	)
 }
 
+// getActivityLimitOffsetQueryParams parses and validates optional limit and offset query values.
 func getActivityLimitOffsetQueryParams(
 	r *http.Request,
 ) (*int, *int, error) {

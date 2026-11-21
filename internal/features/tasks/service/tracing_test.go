@@ -21,6 +21,7 @@ type tracingTasksRepository struct {
 	spans []recordedSpan
 }
 
+// recordContext captures the active span context passed to the Tasks repository.
 func (r *tracingTasksRepository) recordContext(ctx context.Context) {
 	span := trace.SpanFromContext(ctx)
 
@@ -30,6 +31,7 @@ func (r *tracingTasksRepository) recordContext(ctx context.Context) {
 	})
 }
 
+// CreateTask supports the corresponding integration or tracing test.
 func (r *tracingTasksRepository) CreateTask(
 	ctx context.Context,
 	task domain.Task,
@@ -38,6 +40,7 @@ func (r *tracingTasksRepository) CreateTask(
 	return task, nil
 }
 
+// GetTasks supports the corresponding integration or tracing test.
 func (r *tracingTasksRepository) GetTasks(
 	ctx context.Context,
 	_ *int,
@@ -48,6 +51,7 @@ func (r *tracingTasksRepository) GetTasks(
 	return []domain.Task{r.task}, nil
 }
 
+// GetTask supports the corresponding integration or tracing test.
 func (r *tracingTasksRepository) GetTask(
 	ctx context.Context,
 	_ int,
@@ -56,6 +60,7 @@ func (r *tracingTasksRepository) GetTask(
 	return r.task, nil
 }
 
+// DeleteTask supports the corresponding integration or tracing test.
 func (r *tracingTasksRepository) DeleteTask(
 	ctx context.Context,
 	_ int,
@@ -64,6 +69,7 @@ func (r *tracingTasksRepository) DeleteTask(
 	return nil
 }
 
+// PatchTask supports the corresponding integration or tracing test.
 func (r *tracingTasksRepository) PatchTask(
 	ctx context.Context,
 	_ int,
@@ -74,6 +80,7 @@ func (r *tracingTasksRepository) PatchTask(
 	return after, nil
 }
 
+// TestTasksServiceMethodsCreateSpans verifies the integration behavior represented by its test scenarios.
 func TestTasksServiceMethodsCreateSpans(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 

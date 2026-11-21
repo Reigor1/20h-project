@@ -16,8 +16,10 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// postgresUniqueViolationCode defines a shared limit or value used by the test workflow.
 const postgresUniqueViolationCode = "23505"
 
+// TestEventStorageMigrationsIntegration verifies the end-to-end or integration behavior represented by its test scenarios.
 func TestEventStorageMigrationsIntegration(t *testing.T) {
 	config := testutil.PostgresTestConfig(t)
 
@@ -80,6 +82,7 @@ func TestEventStorageMigrationsIntegration(t *testing.T) {
 	})
 }
 
+// applyMigration supports setup, execution, or verification of the corresponding test scenario.
 func applyMigration(
 	t *testing.T,
 	ctx context.Context,
@@ -104,6 +107,7 @@ func applyMigration(
 	}
 }
 
+// insertOutboxEvent inserts the corresponding fixture data into the integration-test database.
 func insertOutboxEvent(
 	t *testing.T,
 	ctx context.Context,
@@ -118,6 +122,7 @@ func insertOutboxEvent(
 	}
 }
 
+// insertOutboxEventError inserts the corresponding fixture data into the integration-test database.
 func insertOutboxEventError(
 	ctx context.Context,
 	pool *core_pgx_pool.Pool,
@@ -150,6 +155,7 @@ func insertOutboxEventError(
 	return err
 }
 
+// insertTaskActivity inserts the corresponding fixture data into the integration-test database.
 func insertTaskActivity(
 	t *testing.T,
 	ctx context.Context,
@@ -164,6 +170,7 @@ func insertTaskActivity(
 	}
 }
 
+// insertTaskActivityError inserts the corresponding fixture data into the integration-test database.
 func insertTaskActivityError(
 	ctx context.Context,
 	pool *core_pgx_pool.Pool,
@@ -194,6 +201,7 @@ func insertTaskActivityError(
 	return err
 }
 
+// assertUniqueViolation checks the expected state or result and reports failures through the test.
 func assertUniqueViolation(t *testing.T, constraint string, err error) {
 	t.Helper()
 
@@ -230,6 +238,7 @@ func assertUniqueViolation(t *testing.T, constraint string, err error) {
 	}
 }
 
+// assertConnectedTestDatabase checks the expected state or result and reports failures through the test.
 func assertConnectedTestDatabase(
 	t *testing.T,
 	ctx context.Context,

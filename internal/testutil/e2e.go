@@ -15,6 +15,8 @@ import (
 )
 
 // StartApp starts the application and returns its base URL.
+// StartApp builds and starts the API using .env.test, waits for its HTTP listener,
+// and registers process cleanup with the test. It returns the application base URL.
 func StartApp(t *testing.T) string {
 	t.Helper()
 
@@ -122,6 +124,7 @@ func StartApp(t *testing.T) string {
 }
 
 // findProjectRoot searches upward for the project's go.mod file.
+// findProjectRoot walks upward from the working directory until it finds go.mod.
 func findProjectRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -151,6 +154,8 @@ func findProjectRoot() (string, error) {
 	}
 }
 
+// httpProbeAddress converts a server listen address into a loopback TCP probe address.
+// Wildcard hosts are replaced with loopback addresses so tests can check readiness locally.
 func httpProbeAddress(httpAddr string) (string, error) {
 	host, port, err := net.SplitHostPort(httpAddr)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// GetTasks validates pagination and optional user filtering before querying the repository.
 func (s *TasksService) GetTasks(
 	ctx context.Context,
 	userID *int,
@@ -17,7 +18,7 @@ func (s *TasksService) GetTasks(
 ) ([]domain.Task, error) {
 	ctx, span := s.tracer.Start(ctx, "tasks.list")
 	defer span.End()
-	
+
 	if limit != nil && *limit < 0 {
 		core_observability.MarkSpanError(span, "tasks.list")
 		return nil, fmt.Errorf(

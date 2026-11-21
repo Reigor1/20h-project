@@ -9,10 +9,12 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
+// PGXPool exposes the pgx pool statistics method required by pool metric collection.
 type PGXPool interface {
 	Stat() *pgxpool.Stat
 }
 
+// RegisterPoolMetrics registers OpenTelemetry instruments for PostgreSQL connection-pool statistics.
 func RegisterPoolMetrics(
 	provider metric.MeterProvider,
 	pool otelpgx.PoolStats,

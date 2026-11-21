@@ -8,10 +8,12 @@ import (
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 )
 
+// ActivityRepository stores and retrieves Activity Log records in PostgreSQL.
 type ActivityRepository struct {
 	pool core_postgres_pool.TransactionalPool
 }
 
+// NewActivityRepository creates an Activity repository backed by the supplied PostgreSQL pool.
 func NewActivityRepository(
 	pool core_postgres_pool.TransactionalPool,
 ) *ActivityRepository {
@@ -20,6 +22,8 @@ func NewActivityRepository(
 	}
 }
 
+// Record inserts an event into Activity Log once per event ID. It reports inserted=false
+// when the event was already persisted, making redelivery safe.
 func (r *ActivityRepository) Record(
 	ctx context.Context,
 	event core_events.Envelope,

@@ -9,6 +9,7 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// GetUsers validates pagination before retrieving users from the repository.
 func (s *UsersService) GetUsers(
 	ctx context.Context,
 	limit *int,

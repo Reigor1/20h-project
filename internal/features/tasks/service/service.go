@@ -9,11 +9,13 @@ import (
 
 const tracerInstrumentationName = "github.com/Reigor1/20h-project/internal/features/tasks/service"
 
+// TasksService implements task use cases and coordinates repository transactions and events.
 type TasksService struct {
 	tasksRepository TasksRepository
 	tracer          trace.Tracer
 }
 
+// TasksRepository defines task persistence operations required by the service layer.
 type TasksRepository interface {
 	CreateTask(
 		ctx context.Context,
@@ -45,6 +47,7 @@ type TasksRepository interface {
 	) (domain.Task, error)
 }
 
+// NewTasksService constructs the task use-case service with its repository dependencies.
 func NewTasksService(
 	tasksRepository TasksRepository,
 	tracerProvider trace.TracerProvider,

@@ -9,10 +9,12 @@ import (
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
 )
 
+// StatisticsHTTPHandler exposes statistics use cases through HTTP endpoints.
 type StatisticsHTTPHandler struct {
 	statisticsService StatisticsService
 }
 
+// StatisticsService defines the filtered statistics operation used by the HTTP layer.
 type StatisticsService interface {
 	GetStatistics(
 		ctx context.Context,
@@ -22,6 +24,7 @@ type StatisticsService interface {
 	) (domain.Statistics, error)
 }
 
+// NewStatisticsHTTPHandler creates the statistics handler with its service dependency.
 func NewStatisticsHTTPHandler(
 	statisticsService StatisticsService,
 ) *StatisticsHTTPHandler {
@@ -30,6 +33,7 @@ func NewStatisticsHTTPHandler(
 	}
 }
 
+// Routes returns the HTTP routes registered by the Statistics feature.
 func (h *StatisticsHTTPHandler) Routes() []core_http_server.Route {
 	return []core_http_server.Route{
 		{

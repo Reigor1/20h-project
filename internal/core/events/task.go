@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// TaskSnapshot captures the task state embedded in a task lifecycle event.
 type TaskSnapshot struct {
 	ID           int64      `json:"id"`
 	Version      int64      `json:"version"`
@@ -19,19 +20,23 @@ type TaskSnapshot struct {
 	AuthorUserID int64      `json:"author_user_id"`
 }
 
+// TaskCreatedPayload contains the task state at creation time.
 type TaskCreatedPayload struct {
 	Task TaskSnapshot `json:"task"`
 }
 
+// TaskUpdatedPayload contains the task state immediately before and after an update.
 type TaskUpdatedPayload struct {
 	Before TaskSnapshot `json:"before"`
 	After  TaskSnapshot `json:"after"`
 }
 
+// TaskDeletedPayload preserves the final task state in a deletion event.
 type TaskDeletedPayload struct {
 	Task TaskSnapshot `json:"task"`
 }
 
+// NewTaskCreated builds a versioned task.created event from the supplied snapshot.
 func NewTaskCreated(task TaskSnapshot) (Envelope, error) {
 	return newTaskEnvelope(
 		EventTypeTaskCreated,
@@ -42,6 +47,8 @@ func NewTaskCreated(task TaskSnapshot) (Envelope, error) {
 	)
 }
 
+// NewTaskUpdated builds a task.updated or task.completed event. It requires matching
+// task IDs and exactly one version increment between the before and after snapshots.
 func NewTaskUpdated(
 	before TaskSnapshot,
 	after TaskSnapshot,
@@ -78,6 +85,7 @@ func NewTaskUpdated(
 	)
 }
 
+// NewTaskDeleted builds a task.deleted event that retains the deleted task snapshot.
 func NewTaskDeleted(task TaskSnapshot) (Envelope, error) {
 	return newTaskEnvelope(
 		EventTypeTaskDeleted,
@@ -88,6 +96,8 @@ func NewTaskDeleted(task TaskSnapshot) (Envelope, error) {
 	)
 }
 
+// newTaskEnvelope serializes an event-specific payload and fills the common task metadata.
+// It validates the completed envelope before returning it to the caller.
 func newTaskEnvelope(
 	eventType EventType,
 	task TaskSnapshot,

@@ -15,6 +15,7 @@ import (
 )
 
 // Redis implements the shared Cache contract using go-redis/v9.
+// Redis implements the shared Cache contract using the go-redis v9 client.
 type Redis struct {
 	client *redis.Client
 
@@ -28,6 +29,8 @@ var _ core_redis.Cache = (*Redis)(nil)
 // A failed initial connection is returned to the caller; the application
 // bootstrap decides whether Redis failure is fatal or whether cache use
 // should be disabled while the application continues to run.
+// NewRedis creates the Redis client, configures connection behavior, and verifies
+// connectivity with an initial ping before returning it to the application.
 func NewRedis(
 	ctx context.Context,
 	config Config,
@@ -83,6 +86,7 @@ func NewRedis(
 
 // Get returns the value stored under key. A missing key is reported as
 // core_redis.ErrCacheMiss.
+// Get retrieves a cache value by key and maps Redis errors to the shared cache contract.
 func (r *Redis) Get(ctx context.Context, key string) ([]byte, error) {
 	value, err := r.client.Get(ctx, key).Bytes()
 	if err != nil {
@@ -93,6 +97,7 @@ func (r *Redis) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 // Set stores value under key. TTL must be strictly positive.
+// Set stores a cache value with the supplied TTL after validating the expiration.
 func (r *Redis) Set(
 	ctx context.Context,
 	key string,
@@ -111,6 +116,7 @@ func (r *Redis) Set(
 }
 
 // Delete removes key. Deleting a key that does not exist is not an error.
+// Delete removes the cache entry associated with the supplied key.
 func (r *Redis) Delete(ctx context.Context, key string) error {
 	if err := r.client.Del(ctx, key).Err(); err != nil {
 		return mapErrors(err)
@@ -120,6 +126,7 @@ func (r *Redis) Delete(ctx context.Context, key string) error {
 }
 
 // Close closes the Redis client. Repeated calls are safe.
+// Close releases the underlying go-redis client and its connections.
 func (r *Redis) Close() error {
 	if r == nil || r.client == nil {
 		return nil

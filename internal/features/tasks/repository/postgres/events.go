@@ -5,6 +5,7 @@ import (
 	core_events "github.com/Reigor1/20h-project/internal/core/events"
 )
 
+// taskSnapshotFromDomain copies the domain task state into the event snapshot contract.
 func taskSnapshotFromDomain(task domain.Task) core_events.TaskSnapshot {
 	return core_events.TaskSnapshot{
 		ID:           int64(task.ID),

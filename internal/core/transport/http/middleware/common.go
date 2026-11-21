@@ -14,6 +14,8 @@ const (
 	requestIDHeader = "X-Request-ID"
 )
 
+// CORS adds cross-origin response headers for the configured browser origin
+// and terminates preflight OPTIONS requests without invoking the next handler.
 func CORS() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +41,8 @@ func CORS() Middleware {
 	}
 }
 
+// RequestID preserves an incoming X-Request-ID or generates one, then exposes it
+// on both the request and response for end-to-end request correlation.
 func RequestID() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +59,7 @@ func RequestID() Middleware {
 	}
 }
 
+// Logger attaches request-scoped logging fields and stores the derived logger in context.
 func Logger(log *core_logger.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +77,7 @@ func Logger(log *core_logger.Logger) Middleware {
 	}
 }
 
+// Trace logs request arrival and completion, including the response status and elapsed time.
 func Trace() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +103,7 @@ func Trace() Middleware {
 	}
 }
 
+// Panic recovers panics from downstream handlers, logs the failure, and writes an HTTP error response.
 func Panic() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

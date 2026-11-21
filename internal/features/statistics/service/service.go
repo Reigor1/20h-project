@@ -14,6 +14,7 @@ const (
 	globalStatisticsCacheTTL = 60 * time.Second
 )
 
+// StatisticsService coordinates statistics retrieval, calculation, and optional caching.
 type StatisticsService struct {
 	statisticsRepository StatisticsRepository
 	cache                StatisticsCache

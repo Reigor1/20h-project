@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// TestNewConfigReadsEnvironment verifies that REDIS_* variables populate Redis configuration.
 func TestNewConfigReadsEnvironment(t *testing.T) {
 	t.Setenv("REDIS_ADDR", "redis.example.test:6380")
 	t.Setenv("REDIS_USERNAME", "test-user")
@@ -34,6 +35,8 @@ func TestNewConfigReadsEnvironment(t *testing.T) {
 	}
 }
 
+// TestNewConfigRejectsInvalidValues checks validation of empty addresses, negative DB indexes,
+// and non-positive operation timeouts.
 func TestNewConfigRejectsInvalidValues(t *testing.T) {
 	tests := []struct {
 		name    string

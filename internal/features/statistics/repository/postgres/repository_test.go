@@ -13,6 +13,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// repositoryTestPool captures database calls and returns configured rows or errors.
 type repositoryTestPool struct {
 	t *testing.T
 
@@ -27,12 +28,14 @@ type repositoryTestPool struct {
 	gotArgs       []any
 }
 
+// newRepositoryTestPool creates a strict fake pool that fails on unexpected database operations.
 func newRepositoryTestPool(t *testing.T) *repositoryTestPool {
 	t.Helper()
 
 	return &repositoryTestPool{t: t}
 }
 
+// Query records the SQL, arguments, and context supplied by the repository.
 func (p *repositoryTestPool) Query(
 	ctx context.Context,
 	sql string,
@@ -52,24 +55,29 @@ func (p *repositoryTestPool) Query(
 	return p.queryRows, p.queryError
 }
 
+// QueryRow fails because statistics task listing must use the rows query operation.
 func (p *repositoryTestPool) QueryRow(context.Context, string, ...any) core_postgres_pool.Row {
 	p.queryRowCalls++
 	p.t.Fatal("unexpected PostgreSQL pool QueryRow() call")
 	return nil
 }
 
+// Exec fails because statistics retrieval must not execute database mutations.
 func (p *repositoryTestPool) Exec(context.Context, string, ...any) (core_postgres_pool.CommandTag, error) {
 	p.execCalls++
 	p.t.Fatal("unexpected PostgreSQL pool Exec() call")
 	return nil, nil
 }
 
+// Close satisfies the pool contract; the fake owns no external resources.
 func (*repositoryTestPool) Close() {}
 
+// OpTimeout returns the shared bounded timeout expected by repository tests.
 func (*repositoryTestPool) OpTimeout() time.Duration {
 	return testutil.RepositoryOperationTimeout
 }
 
+// repositoryTestRows simulates row iteration, scanning, iteration errors, and Close calls.
 type repositoryTestRows struct {
 	rows      [][]any
 	current   int
@@ -78,6 +86,7 @@ type repositoryTestRows struct {
 	closeCall int
 }
 
+// Next advances through the configured row fixtures.
 func (r *repositoryTestRows) Next() bool {
 	if r.current >= len(r.rows) {
 		return false
@@ -86,6 +95,7 @@ func (r *repositoryTestRows) Next() bool {
 	return true
 }
 
+// Scan copies the current fixture values into the destinations supplied by the repository.
 func (r *repositoryTestRows) Scan(destinations ...any) error {
 	if r.scanError != nil {
 		return r.scanError
@@ -103,14 +113,17 @@ func (r *repositoryTestRows) Scan(destinations ...any) error {
 	return nil
 }
 
+// Err returns the configured error reported after row iteration.
 func (r *repositoryTestRows) Err() error {
 	return r.rowsError
 }
 
+// Close records resource cleanup so tests can verify rows are always closed.
 func (r *repositoryTestRows) Close() {
 	r.closeCall++
 }
 
+// assignStatisticsScanValue assigns a typed fixture value to a supported Scan destination.
 func assignStatisticsScanValue(destination, value any) error {
 	switch destination := destination.(type) {
 	case *int:
@@ -156,6 +169,7 @@ func assignStatisticsScanValue(destination, value any) error {
 	return nil
 }
 
+// TestNewStatisticsRepositoryStoresPool verifies the repository retains its database dependency.
 func TestNewStatisticsRepositoryStoresPool(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 
@@ -166,6 +180,8 @@ func TestNewStatisticsRepositoryStoresPool(t *testing.T) {
 	}
 }
 
+// TestGetTasksBuildsQueriesForOptionalFilters verifies SQL predicates and argument order
+// for each combination of owner and date filters.
 func TestGetTasksBuildsQueriesForOptionalFilters(t *testing.T) {
 	userID := 27
 	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
@@ -257,6 +273,8 @@ func TestGetTasksBuildsQueriesForOptionalFilters(t *testing.T) {
 	}
 }
 
+// TestGetTasksMapsRowsInOrderIncludingNullableFields verifies model conversion, result order,
+// and preservation of nullable task columns.
 func TestGetTasksMapsRowsInOrderIncludingNullableFields(t *testing.T) {
 	firstDescription := "Review completed work"
 	firstCreatedAt := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
@@ -289,6 +307,7 @@ func TestGetTasksMapsRowsInOrderIncludingNullableFields(t *testing.T) {
 	}
 }
 
+// TestGetTasksReturnsQueryError checks query error wrapping and the nil result on failure.
 func TestGetTasksReturnsQueryError(t *testing.T) {
 	queryError := errors.New("connection unavailable")
 	pool := newRepositoryTestPool(t)
@@ -311,6 +330,7 @@ func TestGetTasksReturnsQueryError(t *testing.T) {
 	}
 }
 
+// TestGetTasksReturnsScanErrorAndClosesRows verifies scan failures are returned and rows are closed.
 func TestGetTasksReturnsScanErrorAndClosesRows(t *testing.T) {
 	scanError := errors.New("invalid row")
 	rows := &repositoryTestRows{
@@ -339,6 +359,7 @@ func TestGetTasksReturnsScanErrorAndClosesRows(t *testing.T) {
 	}
 }
 
+// TestGetTasksReturnsRowsIterationErrorAndClosesRows checks iteration failures and row cleanup.
 func TestGetTasksReturnsRowsIterationErrorAndClosesRows(t *testing.T) {
 	iterationError := errors.New("iteration failed")
 	rows := &repositoryTestRows{rowsError: iterationError}

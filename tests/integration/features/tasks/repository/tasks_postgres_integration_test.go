@@ -19,6 +19,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// TestTasksRepositoryIntegration verifies the integration behavior represented by its test scenarios.
 func TestTasksRepositoryIntegration(t *testing.T) {
 	config := testutil.PostgresTestConfig(t)
 	if !strings.HasSuffix(strings.ToLower(config.Database), "_test") {
@@ -533,6 +534,7 @@ func TestTasksRepositoryIntegration(t *testing.T) {
 	})
 }
 
+// assertConnectedTestDatabase checks the expected persisted state or database error.
 func assertConnectedTestDatabase(
 	t *testing.T,
 	ctx context.Context,
@@ -550,6 +552,7 @@ func assertConnectedTestDatabase(
 	}
 }
 
+// insertTaskAuthor inserts fixture data into the PostgreSQL integration-test database.
 func insertTaskAuthor(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool) int {
 	t.Helper()
 
@@ -570,6 +573,7 @@ func insertTaskAuthor(t *testing.T, ctx context.Context, pool *core_pgx_pool.Poo
 	return authorID
 }
 
+// insertTask inserts fixture data into the PostgreSQL integration-test database.
 func insertTask(
 	t *testing.T,
 	ctx context.Context,
@@ -622,6 +626,7 @@ func insertTask(
 	return task
 }
 
+// registerTaskCleanup registers cleanup for test data created by the scenario.
 func registerTaskCleanup(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, taskID int) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -629,6 +634,7 @@ func registerTaskCleanup(t *testing.T, ctx context.Context, pool *core_pgx_pool.
 	})
 }
 
+// deleteTaskDirectly removes test data or schema created by the integration scenario.
 func deleteTaskDirectly(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, taskID int) {
 	t.Helper()
 	if _, err := pool.Exec(ctx, "DELETE FROM todoapp.tasks WHERE id = $1", taskID); err != nil {
@@ -636,6 +642,7 @@ func deleteTaskDirectly(t *testing.T, ctx context.Context, pool *core_pgx_pool.P
 	}
 }
 
+// deleteTaskAuthorDirectly removes test data or schema created by the integration scenario.
 func deleteTaskAuthorDirectly(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, authorID int) {
 	t.Helper()
 	if _, err := pool.Exec(ctx, "DELETE FROM todoapp.users WHERE id = $1", authorID); err != nil {
@@ -643,6 +650,7 @@ func deleteTaskAuthorDirectly(t *testing.T, ctx context.Context, pool *core_pgx_
 	}
 }
 
+// readStoredTask reads the persisted entity for integration-test verification.
 func readStoredTask(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, taskID int) domain.Task {
 	t.Helper()
 
@@ -669,6 +677,7 @@ func readStoredTask(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool,
 	return task
 }
 
+// countTasks returns the number of matching records for an integration assertion.
 func countTasks(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool) int {
 	t.Helper()
 
@@ -679,6 +688,7 @@ func countTasks(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool) int
 	return count
 }
 
+// taskExists supports the corresponding integration or tracing test.
 func taskExists(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, taskID int) bool {
 	t.Helper()
 
@@ -693,6 +703,7 @@ func taskExists(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, tas
 	return exists
 }
 
+// countOutboxEvents returns the number of matching records for an integration assertion.
 func countOutboxEvents(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool) int {
 	t.Helper()
 
@@ -703,6 +714,7 @@ func countOutboxEvents(t *testing.T, ctx context.Context, pool *core_pgx_pool.Po
 	return count
 }
 
+// countOutboxEventsForTask returns the number of matching records for an integration assertion.
 func countOutboxEventsForTask(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, taskID int) int {
 	t.Helper()
 
@@ -720,6 +732,7 @@ func countOutboxEventsForTask(t *testing.T, ctx context.Context, pool *core_pgx_
 	return count
 }
 
+// assertOutboxCount checks the expected persisted state or database error.
 func assertOutboxCount(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, want int) {
 	t.Helper()
 
@@ -729,6 +742,7 @@ func assertOutboxCount(t *testing.T, ctx context.Context, pool *core_pgx_pool.Po
 	}
 }
 
+// assertOutboxEvent checks the expected persisted state or database error.
 func assertOutboxEvent(
 	t *testing.T,
 	ctx context.Context,
@@ -814,6 +828,7 @@ func assertOutboxEvent(
 	}
 }
 
+// assertTaskEqual checks the expected persisted state or database error.
 func assertTaskEqual(t *testing.T, operation string, got, want domain.Task) {
 	t.Helper()
 
@@ -825,6 +840,7 @@ func assertTaskEqual(t *testing.T, operation string, got, want domain.Task) {
 	}
 }
 
+// assertTasksEqual checks the expected persisted state or database error.
 func assertTasksEqual(t *testing.T, operation string, got, want []domain.Task) {
 	t.Helper()
 
@@ -836,6 +852,7 @@ func assertTasksEqual(t *testing.T, operation string, got, want []domain.Task) {
 	}
 }
 
+// equalStringPointers compares optional values for integration-test assertions.
 func equalStringPointers(left, right *string) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
@@ -843,6 +860,7 @@ func equalStringPointers(left, right *string) bool {
 	return *left == *right
 }
 
+// equalTimePointers compares optional values for integration-test assertions.
 func equalTimePointers(left, right *time.Time) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
@@ -850,6 +868,7 @@ func equalTimePointers(left, right *time.Time) bool {
 	return left.Equal(*right)
 }
 
+// assertUnknownDatabaseError checks the expected persisted state or database error.
 func assertUnknownDatabaseError(t *testing.T, operation string, err error, wantSQLState string) {
 	t.Helper()
 
@@ -864,10 +883,12 @@ func assertUnknownDatabaseError(t *testing.T, operation string, err error, wantS
 	}
 }
 
+// stringPointer creates a pointer value for integration-test fixtures.
 func stringPointer(value string) *string {
 	return &value
 }
 
+// timePointer creates a pointer value for integration-test fixtures.
 func timePointer(value time.Time) *time.Time {
 	return &value
 }

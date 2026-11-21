@@ -17,6 +17,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// statisticsServiceStub records Statistics service calls and supplies configured results or errors.
 type statisticsServiceStub struct {
 	t *testing.T
 
@@ -30,12 +31,14 @@ type statisticsServiceStub struct {
 	gotTo     *time.Time
 }
 
+// newStatisticsServiceStub creates the service fake used by Statistics HTTP handler tests.
 func newStatisticsServiceStub(t *testing.T) *statisticsServiceStub {
 	t.Helper()
 
 	return &statisticsServiceStub{t: t}
 }
 
+// GetStatistics captures the HTTP query filters and returns the configured service response.
 func (s *statisticsServiceStub) GetStatistics(
 	_ context.Context,
 	userID *int,
@@ -53,6 +56,8 @@ func (s *statisticsServiceStub) GetStatistics(
 	return s.result, s.err
 }
 
+// TestGetStatisticsReturnsJSONAndForwardsQueryParameters verifies response encoding and parsing
+// of user_id, from, and to filters before the service call.
 func TestGetStatisticsReturnsJSONAndForwardsQueryParameters(t *testing.T) {
 	userID := 27
 	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
@@ -101,6 +106,7 @@ func TestGetStatisticsReturnsJSONAndForwardsQueryParameters(t *testing.T) {
 	}
 }
 
+// TestGetStatisticsAllowsAbsentFiltersAndNilMetrics checks an unfiltered request and omitted optional metrics.
 func TestGetStatisticsAllowsAbsentFiltersAndNilMetrics(t *testing.T) {
 	service := newStatisticsServiceStub(t)
 	service.expectGetStatistics = true
@@ -130,6 +136,8 @@ func TestGetStatisticsAllowsAbsentFiltersAndNilMetrics(t *testing.T) {
 	}
 }
 
+// TestGetStatisticsRejectsInvalidQueryParameters verifies malformed user IDs and dates return HTTP 400
+// without calling the service.
 func TestGetStatisticsRejectsInvalidQueryParameters(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -165,6 +173,7 @@ func TestGetStatisticsRejectsInvalidQueryParameters(t *testing.T) {
 	}
 }
 
+// TestGetStatisticsReturnsServiceError checks domain validation and unexpected service errors map to HTTP statuses.
 func TestGetStatisticsReturnsServiceError(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -201,6 +210,7 @@ func TestGetStatisticsReturnsServiceError(t *testing.T) {
 	}
 }
 
+// TestStatisticsHTTPHandlerRoutes verifies the Statistics endpoint is registered as GET /statistics.
 func TestStatisticsHTTPHandlerRoutes(t *testing.T) {
 	handler := NewStatisticsHTTPHandler(newStatisticsServiceStub(t))
 	routes := handler.Routes()
@@ -221,6 +231,7 @@ func TestStatisticsHTTPHandlerRoutes(t *testing.T) {
 	}
 }
 
+// newStatisticsRequest creates a GET request with a no-op logger in its context.
 func newStatisticsRequest(target string) *http.Request {
 	request := httptest.NewRequest(http.MethodGet, target, nil)
 	return request.WithContext(

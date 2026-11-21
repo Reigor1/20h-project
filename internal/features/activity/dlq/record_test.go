@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TestMarshalAndUnmarshalPreserveOriginalMessage verifies DLQ serialization retains the source payload and position.
 func TestMarshalAndUnmarshalPreserveOriginalMessage(t *testing.T) {
 	want := Record{
 		EventID:         "123e4567-e89b-12d3-a456-426614174000",
@@ -66,6 +67,7 @@ func TestMarshalAndUnmarshalPreserveOriginalMessage(t *testing.T) {
 	}
 }
 
+// TestRecordValidate checks required event, source Kafka, timestamp, and failure metadata.
 func TestRecordValidate(t *testing.T) {
 	validRecord := Record{
 		OriginalPayload: []byte(`{}`),

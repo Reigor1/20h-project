@@ -22,6 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// main starts the Activity Worker and reports startup or runtime failures to stderr.
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "Activity Worker failed:", err)
@@ -29,6 +30,8 @@ func main() {
 	}
 }
 
+// run initializes the Worker dependencies, connects Kafka to PostgreSQL,
+// and keeps telemetry and resources alive until the Worker has stopped.
 func run() (runErr error) {
 	appConfig := core_config.NewConfigMust()
 	time.Local = appConfig.TimeZone

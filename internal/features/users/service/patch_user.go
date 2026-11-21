@@ -8,6 +8,8 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// PatchUser applies a partial user update after loading the current state and checking
+// the expected version, then persists the validated result.
 func (s *UsersService) PatchUser(
 	ctx context.Context,
 	id int,

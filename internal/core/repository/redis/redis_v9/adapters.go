@@ -12,6 +12,7 @@ import (
 
 // mapErrors converts go-redis errors into errors owned by the Redis
 // infrastructure package. Context cancellation and deadlines are preserved.
+// mapErrors translates go-redis errors into the shared cache error contract.
 func mapErrors(err error) error {
 	if err == nil {
 		return nil

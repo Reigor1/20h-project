@@ -8,6 +8,7 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 )
 
+// GetTaskResponse is the JSON response returned by the single-task endpoint.
 type GetTaskResponse TaskDTOResponse
 
 // GetTask godoc
@@ -21,6 +22,7 @@ type GetTaskResponse TaskDTOResponse
 // @Failure 404 {object} core_http_response.ErrorResponse "Task not found"
 // @Failure 500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router /tasks/{id} [get]
+// GetTask parses the task ID, retrieves the task through the service, and returns HTTP 200.
 func (h *TasksHTTPHandler) GetTask(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)

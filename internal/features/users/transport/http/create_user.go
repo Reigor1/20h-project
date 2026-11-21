@@ -9,11 +9,13 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 )
 
+// CreateUserRequest is the JSON body accepted by the user creation endpoint.
 type CreateUserRequest struct {
 	FullName    string  `json:"full_name"    validate:"required,min=3,max=100"               example:"Ivan Ivanov"  `
 	PhoneNumber *string `json:"phone_number" validate:"omitempty,min=10,max=15,startswith=+" example:"+79998887766" `
 }
 
+// CreateUserResponse is the JSON representation returned after a user is created.
 type CreateUserResponse UserDTOResponse
 
 // CreateUser   godoc
@@ -27,6 +29,8 @@ type CreateUserResponse UserDTOResponse
 // @Failure     400 {object} core_http_response.ErrorResponse "Bad request"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /users [post]
+// CreateUser decodes and validates the request, creates the user through the service,
+// and returns the created user with HTTP 201.
 func (h *UsersHTTPHandler) CreateUser(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)
@@ -53,6 +57,7 @@ func (h *UsersHTTPHandler) CreateUser(rw http.ResponseWriter, r *http.Request) {
 	responseHandler.JSONResponse(response, http.StatusCreated)
 }
 
+// domainFromDTO converts the creation request into an uninitialized domain User.
 func domainFromDTO(dto CreateUserRequest) domain.User {
 	return domain.NewUserUninitialized(dto.FullName, dto.PhoneNumber)
 }

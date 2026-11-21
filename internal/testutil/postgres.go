@@ -11,6 +11,8 @@ import (
 )
 
 // PreparePostgresSchema creates the todoapp schema and executes a test schema SQL file.
+// PreparePostgresSchema ensures the application schema exists and executes the supplied
+// SQL file against the test database.
 func PreparePostgresSchema(
 	t *testing.T,
 	ctx context.Context,
@@ -34,6 +36,8 @@ func PreparePostgresSchema(
 }
 
 // PostgresTestConfig reads the isolated POSTGRES_TEST_* settings used by integration tests.
+// PostgresTestConfig loads dedicated integration-test credentials, skips when none are
+// configured, and rejects using the same database as the application.
 func PostgresTestConfig(t *testing.T) core_pgx_pool.Config {
 	t.Helper()
 

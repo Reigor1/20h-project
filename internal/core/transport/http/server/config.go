@@ -7,11 +7,13 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
+// Config contains the HTTP listen address and graceful-shutdown timeout.
 type Config struct {
 	Addr            string        `envconfig:"ADDR" required:"true"`
 	ShutdownTimeout time.Duration `envconfig:"SHUTDOWN_TIMEOUT" default:"30s"`
 }
 
+// NewConfig loads HTTP server settings from HTTP_* environment variables.
 func NewConfig() (Config, error) {
 	var config Config
 
@@ -22,6 +24,7 @@ func NewConfig() (Config, error) {
 	return config, nil
 }
 
+// NewConfigMust returns the HTTP server configuration or panics when it is invalid.
 func NewConfigMust() Config {
 	config, err := NewConfig()
 	if err != nil {

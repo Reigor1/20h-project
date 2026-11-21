@@ -8,6 +8,7 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// GetTask retrieves one task by ID and returns the repository's not-found error when absent.
 func (s *TasksService) GetTask(
 	ctx context.Context,
 	id int,

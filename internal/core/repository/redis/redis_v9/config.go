@@ -9,6 +9,7 @@ import (
 )
 
 // Config contains the connection settings for go-redis/v9.
+// Config contains the Redis connection address, database index, and operation timeout.
 type Config struct {
 	Addr     string        `envconfig:"ADDR" default:"localhost:6379"`
 	Username string        `envconfig:"USERNAME"`
@@ -18,6 +19,7 @@ type Config struct {
 }
 
 // NewConfig reads Redis connection settings from REDIS_* environment variables.
+// NewConfig loads Redis settings from the environment, applies defaults, and validates them.
 func NewConfig() (Config, error) {
 	var config Config
 
@@ -32,6 +34,8 @@ func NewConfig() (Config, error) {
 	return config, nil
 }
 
+// validate checks the Redis address, database index, and operation timeout.
+// validate rejects missing addresses, negative database indexes, and invalid timeouts.
 func (c Config) validate() error {
 	if strings.TrimSpace(c.Addr) == "" {
 		return fmt.Errorf("Redis address must not be empty")

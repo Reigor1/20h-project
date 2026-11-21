@@ -10,17 +10,20 @@ import (
 	"testing"
 )
 
+// apiResult captures the HTTP status, headers, and decoded response body for an API request.
 type apiResult struct {
 	StatusCode int
 	Header     http.Header
 	Body       []byte
 }
 
+// apiClient provides the base URL and HTTP client used by API end-to-end scenarios.
 type apiClient struct {
 	httpClient *http.Client
 	baseURL    string
 }
 
+// request sends an HTTP request, optionally JSON-encodes its body, and decodes the response.
 func (c apiClient) request(method, path string, body any) (apiResult, error) {
 	var requestBody io.Reader
 	if body != nil {
@@ -53,6 +56,7 @@ func (c apiClient) request(method, path string, body any) (apiResult, error) {
 	return apiResult{StatusCode: resp.StatusCode, Header: resp.Header.Clone(), Body: responseBody}, nil
 }
 
+// expectedErrorCase describes a request that must produce a particular API error status.
 type expectedErrorCase struct {
 	name   string
 	method string
@@ -61,6 +65,7 @@ type expectedErrorCase struct {
 	status int
 }
 
+// expectedSuccessCase describes a successful JSON request and its expected response.
 type expectedSuccessCase struct {
 	name   string
 	method string
@@ -70,11 +75,13 @@ type expectedSuccessCase struct {
 	check  func(t *testing.T, result apiResult)
 }
 
+// errorResponse represents the error envelope returned by the API.
 type errorResponse struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`
 }
 
+// assertStatus checks the HTTP status returned by an API request and reports request context on failure.
 func assertStatus(t *testing.T, result apiResult, method, path string, want int) {
 	t.Helper()
 	if result.StatusCode != want {
@@ -82,6 +89,7 @@ func assertStatus(t *testing.T, result apiResult, method, path string, want int)
 	}
 }
 
+// assertErrorResponse decodes and validates the standard API error response body.
 func assertErrorResponse(t *testing.T, result apiResult) errorResponse {
 	t.Helper()
 	var got errorResponse
@@ -94,6 +102,7 @@ func assertErrorResponse(t *testing.T, result apiResult) errorResponse {
 	return got
 }
 
+// runExpectedErrors executes a table of invalid API requests and checks their expected statuses.
 func runExpectedErrors(t *testing.T, client apiClient, cases []expectedErrorCase) {
 	t.Helper()
 	for _, tc := range cases {
@@ -108,6 +117,7 @@ func runExpectedErrors(t *testing.T, client apiClient, cases []expectedErrorCase
 	}
 }
 
+// newJSONSuccessCase creates a typed test case for a successful JSON API operation.
 func newJSONSuccessCase[Response any, Request any](
 	method string,
 	status int,
@@ -179,6 +189,7 @@ func newJSONSuccessCase[Response any, Request any](
 // 	}
 // }
 
+// runExpectedSuccesses executes successful API cases and validates their decoded response bodies.
 func runExpectedSuccesses(t *testing.T, client apiClient, cases []expectedSuccessCase) {
 	t.Helper()
 	for _, tc := range cases {
@@ -195,6 +206,7 @@ func runExpectedSuccesses(t *testing.T, client apiClient, cases []expectedSucces
 	}
 }
 
+// registerUserCleanup schedules deletion of a test user after the end-to-end test.
 func registerUserCleanup(t *testing.T, api *apiClient, userID int) {
 	t.Helper()
 	t.Cleanup(func() {
@@ -219,6 +231,7 @@ func registerUserCleanup(t *testing.T, api *apiClient, userID int) {
 	})
 }
 
+// createUser creates a user through the public API and fails the test if creation is unsuccessful.
 func createUser(t *testing.T, api *apiClient, name string, phone *string) userResponse {
 	t.Helper()
 	const usersPath = "/api/v1/users"

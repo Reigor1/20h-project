@@ -9,6 +9,8 @@ import (
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 )
 
+// GetIntQueryParam parses an optional integer query parameter.
+// An absent or empty parameter is returned as nil without an error.
 func GetIntQueryParam(r *http.Request, key string) (*int, error) {
 	param := r.URL.Query().Get(key)
 	if param == "" {
@@ -29,6 +31,8 @@ func GetIntQueryParam(r *http.Request, key string) (*int, error) {
 	return &val, nil
 }
 
+// GetDateQueryParam parses an optional date query parameter using the YYYY-MM-DD layout.
+// An absent or empty parameter is returned as nil without an error.
 func GetDateQueryParam(r *http.Request, key string) (*time.Time, error) {
 	param := r.URL.Query().Get(key)
 	if param == "" {

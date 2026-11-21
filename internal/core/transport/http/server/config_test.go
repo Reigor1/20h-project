@@ -7,6 +7,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// TestNewConfig verifies HTTP server configuration defaults and environment overrides.
 func TestNewConfig(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -74,6 +75,7 @@ func TestNewConfig(t *testing.T) {
 	}
 }
 
+// TestNewConfigMust checks the panic-on-error configuration constructor.
 func TestNewConfigMust(t *testing.T) {
 	t.Run("returns valid configuration", func(t *testing.T) {
 		t.Setenv("HTTP_ADDR", "127.0.0.1:5050")

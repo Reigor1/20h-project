@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
+// usersRepositoryStub captures service or repository calls and returns configured test results.
 type usersRepositoryStub struct {
 	t *testing.T
 
@@ -48,12 +49,14 @@ type usersRepositoryStub struct {
 	calls []string
 }
 
+// newUsersRepositoryStub creates the test fixture used by this test file.
 func newUsersRepositoryStub(t *testing.T) *usersRepositoryStub {
 	t.Helper()
 
 	return &usersRepositoryStub{t: t}
 }
 
+// CreateUser implements the corresponding repository operation for tracing or service tests.
 func (r *usersRepositoryStub) CreateUser(
 	_ context.Context,
 	user domain.User,
@@ -69,6 +72,7 @@ func (r *usersRepositoryStub) CreateUser(
 	return r.createUserResult, r.createUserError
 }
 
+// GetUsers implements the corresponding repository operation for tracing or service tests.
 func (r *usersRepositoryStub) GetUsers(
 	_ context.Context,
 	limit *int,
@@ -86,6 +90,7 @@ func (r *usersRepositoryStub) GetUsers(
 	return r.getUsersResult, r.getUsersError
 }
 
+// GetUser implements the corresponding repository operation for tracing or service tests.
 func (r *usersRepositoryStub) GetUser(
 	_ context.Context,
 	id int,
@@ -101,6 +106,7 @@ func (r *usersRepositoryStub) GetUser(
 	return r.getUserResult, r.getUserError
 }
 
+// DeleteUser implements the corresponding repository operation for tracing or service tests.
 func (r *usersRepositoryStub) DeleteUser(
 	_ context.Context,
 	id int,
@@ -116,6 +122,7 @@ func (r *usersRepositoryStub) DeleteUser(
 	return r.deleteUserError
 }
 
+// PatchUser implements the corresponding repository operation for tracing or service tests.
 func (r *usersRepositoryStub) PatchUser(
 	_ context.Context,
 	id int,
@@ -133,6 +140,7 @@ func (r *usersRepositoryStub) PatchUser(
 	return r.patchUserResult, r.patchUserError
 }
 
+// TestCreateUser verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateUser(t *testing.T) {
 	phoneNumber := "+1234567890"
 	inputUser := domain.NewUserUninitialized("Ada Lovelace", &phoneNumber)
@@ -159,6 +167,7 @@ func TestCreateUser(t *testing.T) {
 	}
 }
 
+// TestCreateUserRejectsInvalidUser verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateUserRejectsInvalidUser(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	service := newUsersServiceForTest(repository)
@@ -177,6 +186,7 @@ func TestCreateUserRejectsInvalidUser(t *testing.T) {
 	}
 }
 
+// TestCreateUserReturnsRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateUserReturnsRepositoryError(t *testing.T) {
 	repositoryError := errors.New("storage unavailable")
 	repository := newUsersRepositoryStub(t)
@@ -195,6 +205,7 @@ func TestCreateUserReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// TestGetUser verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUser(t *testing.T) {
 	wantUser := domain.NewUser(42, 3, "Ada Lovelace", nil)
 	repository := newUsersRepositoryStub(t)
@@ -214,6 +225,7 @@ func TestGetUser(t *testing.T) {
 	}
 }
 
+// TestGetUserReturnsRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUserReturnsRepositoryError(t *testing.T) {
 	repositoryError := core_errors.ErrNotFound
 	repository := newUsersRepositoryStub(t)
@@ -231,6 +243,7 @@ func TestGetUserReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// TestGetUsersPassesPaginationToRepository verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUsersPassesPaginationToRepository(t *testing.T) {
 	limit := 20
 	offset := 40
@@ -262,6 +275,7 @@ func TestGetUsersPassesPaginationToRepository(t *testing.T) {
 	}
 }
 
+// TestGetUsersAllowsUnsetPagination verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUsersAllowsUnsetPagination(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectGetUsers = true
@@ -285,6 +299,7 @@ func TestGetUsersAllowsUnsetPagination(t *testing.T) {
 	}
 }
 
+// TestGetUsersRejectsNegativePagination verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUsersRejectsNegativePagination(t *testing.T) {
 	negativeValue := -1
 	tests := []struct {
@@ -322,6 +337,7 @@ func TestGetUsersRejectsNegativePagination(t *testing.T) {
 	}
 }
 
+// TestGetUsersReturnsRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetUsersReturnsRepositoryError(t *testing.T) {
 	repositoryError := errors.New("query failed")
 	repository := newUsersRepositoryStub(t)
@@ -339,6 +355,7 @@ func TestGetUsersReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// TestPatchUserAppliesPatchBeforeRepositoryUpdate verifies the behavior and expected outcomes described by its test scenarios.
 func TestPatchUserAppliesPatchBeforeRepositoryUpdate(t *testing.T) {
 	originalPhoneNumber := "+1234567890"
 	updatedFullName := "Grace Hopper"
@@ -377,6 +394,7 @@ func TestPatchUserAppliesPatchBeforeRepositoryUpdate(t *testing.T) {
 	}
 }
 
+// TestPatchUserReturnsGetErrorWithoutUpdating verifies the behavior and expected outcomes described by its test scenarios.
 func TestPatchUserReturnsGetErrorWithoutUpdating(t *testing.T) {
 	repositoryError := core_errors.ErrNotFound
 	repository := newUsersRepositoryStub(t)
@@ -394,6 +412,7 @@ func TestPatchUserReturnsGetErrorWithoutUpdating(t *testing.T) {
 	}
 }
 
+// TestPatchUserRejectsInvalidPatchWithoutUpdating verifies the behavior and expected outcomes described by its test scenarios.
 func TestPatchUserRejectsInvalidPatchWithoutUpdating(t *testing.T) {
 	initialUser := domain.NewUser(42, 3, "Ada Lovelace", nil)
 	repository := newUsersRepositoryStub(t)
@@ -412,6 +431,7 @@ func TestPatchUserRejectsInvalidPatchWithoutUpdating(t *testing.T) {
 	}
 }
 
+// TestPatchUserReturnsRepositoryUpdateError verifies the behavior and expected outcomes described by its test scenarios.
 func TestPatchUserReturnsRepositoryUpdateError(t *testing.T) {
 	repositoryError := core_errors.ErrConflict
 	initialUser := domain.NewUser(42, 3, "Ada Lovelace", nil)
@@ -437,6 +457,7 @@ func TestPatchUserReturnsRepositoryUpdateError(t *testing.T) {
 	}
 }
 
+// TestDeleteUser verifies the behavior and expected outcomes described by its test scenarios.
 func TestDeleteUser(t *testing.T) {
 	repository := newUsersRepositoryStub(t)
 	repository.expectDeleteUser = true
@@ -451,6 +472,7 @@ func TestDeleteUser(t *testing.T) {
 	}
 }
 
+// TestDeleteUserReturnsRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestDeleteUserReturnsRepositoryError(t *testing.T) {
 	repositoryError := core_errors.ErrNotFound
 	repository := newUsersRepositoryStub(t)
@@ -468,6 +490,7 @@ func TestDeleteUserReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// newUsersServiceForTest creates the test fixture used by this test file.
 func newUsersServiceForTest(repository UsersRepository) *UsersService {
 	return NewUsersService(repository, noop.NewTracerProvider())
 }

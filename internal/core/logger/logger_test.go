@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
+// TestNewLoggerCreatesLogFileAndWritesMessage verifies file creation and persisted log output.
 func TestNewLoggerCreatesLogFileAndWritesMessage(t *testing.T) {
 	logFolder := filepath.Join(t.TempDir(), "nested", "logs")
 	logger, err := NewLogger(Config{
@@ -55,6 +56,7 @@ func TestNewLoggerCreatesLogFileAndWritesMessage(t *testing.T) {
 	}
 }
 
+// TestNewLoggerRejectsInvalidLevel checks validation of the configured logging severity.
 func TestNewLoggerRejectsInvalidLevel(t *testing.T) {
 	logger, err := NewLogger(Config{
 		Level:  "not-a-level",
@@ -71,6 +73,7 @@ func TestNewLoggerRejectsInvalidLevel(t *testing.T) {
 	}
 }
 
+// TestToContextAndFromContextPreserveLoggerIdentity verifies logger retrieval from context.
 func TestToContextAndFromContextPreserveLoggerIdentity(t *testing.T) {
 	logger := &Logger{}
 	ctx := ToContext(context.Background(), logger)
@@ -80,6 +83,7 @@ func TestToContextAndFromContextPreserveLoggerIdentity(t *testing.T) {
 	}
 }
 
+// TestFromContextPanicsWhenLoggerIsMissing verifies that absent logger context is rejected.
 func TestFromContextPanicsWhenLoggerIsMissing(t *testing.T) {
 	defer func() {
 		got := recover()
@@ -91,6 +95,7 @@ func TestFromContextPanicsWhenLoggerIsMissing(t *testing.T) {
 	FromContext(context.Background())
 }
 
+// TestWithWritesMessageAndAdditionalFields checks derived logger fields appear in output.
 func TestWithWritesMessageAndAdditionalFields(t *testing.T) {
 	logFolder := filepath.Join(t.TempDir(), "logs")
 	logger, err := NewLogger(Config{
@@ -132,6 +137,7 @@ func TestWithWritesMessageAndAdditionalFields(t *testing.T) {
 	}
 }
 
+// TestCloseClosesLogFile verifies that the logger releases its file resource.
 func TestCloseClosesLogFile(t *testing.T) {
 	logger, err := NewLogger(Config{
 		Level:  "debug",
@@ -150,6 +156,7 @@ func TestCloseClosesLogFile(t *testing.T) {
 	}
 }
 
+// TestFromContextAddsActiveTraceContext checks that active trace and span IDs enrich log entries.
 func TestFromContextAddsActiveTraceContext(t *testing.T) {
 	core, logs := observer.New(zapcore.DebugLevel)
 	logger := &Logger{Logger: zap.New(core)}
@@ -237,6 +244,7 @@ func TestFromContextAddsActiveTraceContext(t *testing.T) {
 	}
 }
 
+// TestFromContextDoesNotAddTraceFieldsWithoutSpan verifies no trace fields are added without a valid span.
 func TestFromContextDoesNotAddTraceFieldsWithoutSpan(t *testing.T) {
 	core, logs := observer.New(zapcore.DebugLevel)
 	logger := &Logger{Logger: zap.New(core)}

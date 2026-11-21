@@ -47,6 +47,7 @@ import (
 // @Description  `Перед работой помолитесь Богу машины`
 // @Host         127.0.0.1:5050
 // @BasePath     /api/v1
+// main starts the HTTP application and exits when initialization or server execution fails.
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "application failed:", err)
@@ -54,6 +55,8 @@ func main() {
 	}
 }
 
+// run initializes shared infrastructure and feature dependencies, starts the Outbox Publisher
+// alongside the HTTP server, and shuts resources down in dependency order.
 func run() (runErr error) {
 	cfg := core_config.NewConfigMust()
 	time.Local = cfg.TimeZone
@@ -101,9 +104,9 @@ func run() (runErr error) {
 	// Shutdown it before closing the pool so the final metric collection
 	// can still read pgxpool.Stat().
 	var (
-		pool          *core_pgx_pool.Pool
-		cache         core_redis.Cache
-		kafkaProducer *kafka_producer.Producer
+		pool            *core_pgx_pool.Pool
+		cache           core_redis.Cache
+		kafkaProducer   *kafka_producer.Producer
 		publisherDone   chan error
 		publisherCancel context.CancelFunc
 		publisherConfig outbox_publisher.Config

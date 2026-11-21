@@ -10,6 +10,8 @@ import (
 	core_redis "github.com/Reigor1/20h-project/internal/core/repository/redis"
 )
 
+// Get loads and decodes cached global statistics. A missing key is a cache miss,
+// while Redis and JSON decoding failures are returned to the caller.
 func (c *StatisticsCache) Get(ctx context.Context) (domain.Statistics, bool, error) {
 	value, err := c.cache.Get(ctx, globalStatisticsCacheKey)
 	if err != nil {

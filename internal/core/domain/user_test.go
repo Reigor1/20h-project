@@ -7,6 +7,7 @@ import (
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 )
 
+// TestUserValidate verifies full-name and optional phone-number constraints.
 func TestUserValidate(t *testing.T) {
 	validPhoneNumber := "+1234567890"
 	phoneNumberWithoutPrefix := "1234567890"
@@ -60,6 +61,7 @@ func TestUserValidate(t *testing.T) {
 	}
 }
 
+// TestUserPatchValidate checks required-field and nullable-field rules for user patches.
 func TestUserPatchValidate(t *testing.T) {
 	updatedFullName := "Updated name"
 	validPhoneNumber := "+1234567890"
@@ -110,6 +112,7 @@ func TestUserPatchValidate(t *testing.T) {
 	}
 }
 
+// TestUserApplyPatch verifies that only supplied fields change and invalid patches are atomic.
 func TestUserApplyPatch(t *testing.T) {
 	originalPhoneNumber := "+1234567890"
 	updatedFullName := "Updated name"
@@ -173,6 +176,7 @@ func TestUserApplyPatch(t *testing.T) {
 	}
 }
 
+// TestNewUserUninitialized checks the default identity and version of a new user.
 func TestNewUserUninitialized(t *testing.T) {
 	phoneNumber := "+1234567890"
 	user := NewUserUninitialized("Alex Smith", &phoneNumber)
@@ -191,6 +195,7 @@ func TestNewUserUninitialized(t *testing.T) {
 	}
 }
 
+// sameStringPointerValue compares optional string values for test assertions.
 func sameStringPointerValue(got, want *string) bool {
 	if got == nil || want == nil {
 		return got == nil && want == nil

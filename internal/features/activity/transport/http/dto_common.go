@@ -7,6 +7,7 @@ import (
 	activity_service "github.com/Reigor1/20h-project/internal/features/activity/service"
 )
 
+// ActivityDTOResponse is the JSON representation of one Activity Log entry.
 type ActivityDTOResponse struct {
 	EventID          string          `json:"event_id"           example:"550e8400-e29b-41d4-a716-446655440000"`
 	EventType        string          `json:"event_type"         example:"task.completed"`
@@ -19,6 +20,7 @@ type ActivityDTOResponse struct {
 	Payload          json.RawMessage `json:"payload"             swaggertype:"object"`
 }
 
+// activityDTOFromDomain maps a domain Activity value to its HTTP response DTO.
 func activityDTOFromDomain(
 	activity activity_service.Activity,
 ) ActivityDTOResponse {
@@ -35,6 +37,7 @@ func activityDTOFromDomain(
 	}
 }
 
+// activitiesDTOFromDomains converts a slice of domain activities into response DTOs.
 func activitiesDTOFromDomains(
 	activities []activity_service.Activity,
 ) []ActivityDTOResponse {

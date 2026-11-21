@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// statisticsResponse models the aggregate statistics fields returned by the API.
 type statisticsResponse struct {
 	TasksCreated               int      `json:"tasks_created"`
 	TasksCompleted             int      `json:"tasks_completed"`
@@ -15,6 +16,7 @@ type statisticsResponse struct {
 	TasksAverageCompletionTime *string  `json:"tasks_average_completion_time"`
 }
 
+// testStatisticsAPI verifies statistics filters, aggregation values, and invalid query handling over HTTP.
 func testStatisticsAPI(t *testing.T, client *http.Client, baseURL string) {
 	api := apiClient{httpClient: client, baseURL: baseURL}
 

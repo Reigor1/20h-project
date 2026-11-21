@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
+// ErrInvalidRecord indicates that a dead-letter record is missing required source or event metadata.
 var ErrInvalidRecord = errors.New("invalid DLQ record")
 
+// Record stores the original event and its Kafka source position together with failure details.
 type Record struct {
 	EventID         string    `json:"event_id,omitempty"`
 	OriginalPayload []byte    `json:"original_payload"`
@@ -22,6 +24,8 @@ type Record struct {
 	AttemptCount    int       `json:"attempt_count"`
 }
 
+// Validate checks that the DLQ record contains the event identity, original payload,
+// source topic and position, failure timestamp, and error description.
 func (r Record) Validate() error {
 	if strings.TrimSpace(r.SourceTopic) == "" {
 		return fmt.Errorf(
@@ -68,6 +72,7 @@ func (r Record) Validate() error {
 	return nil
 }
 
+// Marshal validates a DLQ record before encoding it as JSON.
 func Marshal(record Record) ([]byte, error) {
 	if err := record.Validate(); err != nil {
 		return nil, err
@@ -81,6 +86,7 @@ func Marshal(record Record) ([]byte, error) {
 	return data, nil
 }
 
+// Unmarshal decodes a DLQ JSON record and validates its required metadata.
 func Unmarshal(data []byte) (Record, error) {
 	var record Record
 

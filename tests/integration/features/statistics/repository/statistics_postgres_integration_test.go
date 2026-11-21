@@ -12,6 +12,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// TestStatisticsRepositoryIntegration verifies the integration behavior represented by its test scenarios.
 func TestStatisticsRepositoryIntegration(t *testing.T) {
 	config := testutil.PostgresTestConfig(t)
 	if !strings.HasSuffix(strings.ToLower(config.Database), "_test") {
@@ -194,6 +195,7 @@ func TestStatisticsRepositoryIntegration(t *testing.T) {
 	})
 }
 
+// insertStatisticsUser inserts fixture data into the PostgreSQL integration-test database.
 func insertStatisticsUser(t *testing.T, ctx context.Context, pool *core_pgx_pool.Pool, fullName string) int {
 	t.Helper()
 
@@ -214,6 +216,7 @@ func insertStatisticsUser(t *testing.T, ctx context.Context, pool *core_pgx_pool
 	return userID
 }
 
+// insertStatisticsTask inserts fixture data into the PostgreSQL integration-test database.
 func insertStatisticsTask(
 	t *testing.T,
 	ctx context.Context,
@@ -253,6 +256,7 @@ func insertStatisticsTask(
 	return taskID
 }
 
+// assertStatisticsTasksEqual checks the expected persisted state or database error.
 func assertStatisticsTasksEqual(t *testing.T, got, want []domain.Task) {
 	t.Helper()
 
@@ -273,6 +277,7 @@ func assertStatisticsTasksEqual(t *testing.T, got, want []domain.Task) {
 	}
 }
 
+// equalStatisticsStringPointers compares optional values for integration-test assertions.
 func equalStatisticsStringPointers(left, right *string) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
@@ -281,6 +286,7 @@ func equalStatisticsStringPointers(left, right *string) bool {
 	return *left == *right
 }
 
+// equalStatisticsTimePointers compares optional values for integration-test assertions.
 func equalStatisticsTimePointers(left, right *time.Time) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil

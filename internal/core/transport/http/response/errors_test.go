@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestErrorResponseJSONRoundTrip verifies that the public error response preserves its fields in JSON.
 func TestErrorResponseJSONRoundTrip(t *testing.T) {
 	response := ErrorResponse{
 		Error:   "invalid argument",

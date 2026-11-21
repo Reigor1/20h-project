@@ -7,6 +7,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 )
 
+// TestNullableUnmarshalJSON verifies absent, null, and concrete JSON values remain distinguishable.
 func TestNullableUnmarshalJSON(t *testing.T) {
 	type request struct {
 		Name Nullable[string]
@@ -66,6 +67,7 @@ func TestNullableUnmarshalJSON(t *testing.T) {
 	}
 }
 
+// TestNullableUnmarshalJSONSetsStateBeforeDecodeError checks that presence state is retained on decode failure.
 func TestNullableUnmarshalJSONSetsStateBeforeDecodeError(t *testing.T) {
 	value := "previous"
 	nullable := Nullable[string]{
@@ -88,6 +90,7 @@ func TestNullableUnmarshalJSONSetsStateBeforeDecodeError(t *testing.T) {
 	}
 }
 
+// TestNullableToDomain verifies conversion of nullable transport fields into domain patch values.
 func TestNullableToDomain(t *testing.T) {
 	value := "updated"
 	tests := []struct {
@@ -137,6 +140,7 @@ func TestNullableToDomain(t *testing.T) {
 	}
 }
 
+// assertStringPointer compares optional string values and reports a named test failure.
 func assertStringPointer(t *testing.T, name string, got, want *string) {
 	t.Helper()
 	if want == nil {
@@ -150,6 +154,7 @@ func assertStringPointer(t *testing.T, name string, got, want *string) {
 	}
 }
 
+// assertIntPointer compares optional integer values and reports a named test failure.
 func assertIntPointer(t *testing.T, name string, got, want *int) {
 	t.Helper()
 	if want == nil {
@@ -163,10 +168,12 @@ func assertIntPointer(t *testing.T, name string, got, want *int) {
 	}
 }
 
+// stringPointer creates a string pointer for nullable field test cases.
 func stringPointer(value string) *string {
 	return &value
 }
 
+// intValuePointer creates an integer pointer for nullable field test cases.
 func intValuePointer(value int) *int {
 	return &value
 }

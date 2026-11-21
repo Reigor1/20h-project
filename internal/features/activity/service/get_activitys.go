@@ -7,6 +7,7 @@ import (
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 )
 
+// GetActivities validates pagination and returns the matching Activity Log entries.
 func (s *ActivityService) GetActivities(
 	ctx context.Context,
 	taskID int,

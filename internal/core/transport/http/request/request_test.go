@@ -10,6 +10,7 @@ import (
 	core_errors "github.com/Reigor1/20h-project/internal/core/errors"
 )
 
+// TestDecodeAndValidateRequest covers JSON decoding, DTO validation, and custom Validate methods.
 func TestDecodeAndValidateRequest(t *testing.T) {
 	type validatedRequest struct {
 		Name string `json:"name" validate:"required"`
@@ -114,16 +115,19 @@ func TestDecodeAndValidateRequest(t *testing.T) {
 	})
 }
 
+// customValidatable is a test DTO whose validation behavior is controlled by its fields.
 type customValidatable struct {
 	Name   string `json:"name"`
 	called *bool
 }
 
+// Validate returns a test error when the custom DTO is configured as invalid.
 func (v *customValidatable) Validate() error {
 	*v.called = true
 	return errors.New("invalid custom request")
 }
 
+// TestGetIntPathValue checks parsing and error classification of integer path values.
 func TestGetIntPathValue(t *testing.T) {
 	tooLarge := "999999999999999999999999999999999999999"
 	tests := []struct {
@@ -196,6 +200,7 @@ func TestGetIntPathValue(t *testing.T) {
 	}
 }
 
+// TestGetIntQueryParam checks optional integer query parameter parsing.
 func TestGetIntQueryParam(t *testing.T) {
 	overflow := "999999999999999999999999999999999999999"
 	tests := []struct {
@@ -256,6 +261,7 @@ func TestGetIntQueryParam(t *testing.T) {
 	}
 }
 
+// TestGetDateQueryParam checks optional YYYY-MM-DD query parameter parsing.
 func TestGetDateQueryParam(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -315,6 +321,8 @@ func TestGetDateQueryParam(t *testing.T) {
 	}
 }
 
+// intPointer creates an integer pointer for query parsing test cases.
 func intPointer(value int) *int { return &value }
 
+// datePointer creates a time pointer for query parsing test cases.
 func datePointer(value time.Time) *time.Time { return &value }
