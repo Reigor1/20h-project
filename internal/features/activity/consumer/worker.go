@@ -23,8 +23,11 @@ import (
 
 const pollTimeout = 100 * time.Millisecond
 
+// ErrPendingQueueFull indicates that polling during retry exceeded the in-memory pending-message limit.
 var ErrPendingQueueFull = errors.New("Kafka pending queue is full")
 
+// KafkaConsumer defines the subscription, polling, assignment, pause, resume, and commit
+// operations required by the Activity Worker.
 type KafkaConsumer interface {
 	Subscribe(topic string) error
 	Poll(timeout time.Duration) kafka_consumer.PollResult
@@ -34,6 +37,7 @@ type KafkaConsumer interface {
 	IsAssigned(message *kafka_consumer.Message) bool
 }
 
+// KafkaProducer publishes records such as malformed events routed to the DLQ.
 type KafkaProducer interface {
 	Publish(
 		ctx context.Context,
@@ -42,6 +46,7 @@ type KafkaProducer interface {
 	) error
 }
 
+// ActivityService persists an event idempotently and reports whether it inserted a new row.
 type ActivityService interface {
 	Record(ctx context.Context, event core_events.Envelope) (inserted bool, err error)
 }
@@ -51,6 +56,8 @@ type Instrumentation struct {
 	Tracer  trace.Tracer
 }
 
+// Worker consumes task events, persists Activity records, commits offsets, and routes
+// permanently invalid messages to a dead-letter topic.
 type Worker struct {
 	topic              string
 	dlqTopic           string
@@ -67,6 +74,7 @@ type Worker struct {
 	tracer   trace.Tracer
 }
 
+// NewWorker validates its Kafka, service, retry, queue, and shutdown dependencies.
 func NewWorker(
 	topic string,
 	dlqTopic string,
@@ -125,6 +133,8 @@ func NewWorker(
 	return worker, nil
 }
 
+// Run subscribes to the source topic and processes messages until shutdown or a fatal error.
+// It stops intake on cancellation and gives the in-flight message a bounded grace period.
 func (w *Worker) Run(ctx context.Context) error {
 	if err := w.consumer.Subscribe(w.topic); err != nil {
 		return fmt.Errorf("subscribe Activity Worker: %w", err)
@@ -247,6 +257,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
+// processMessage processes one record using the same context for work and shutdown control.
 func (w *Worker) processMessage(
 	ctx context.Context,
 	message *kafka_consumer.Message,
@@ -255,6 +266,8 @@ func (w *Worker) processMessage(
 	return w.processMessageWithStop(ctx, ctx, message, pending)
 }
 
+// processMessageWithStop validates ownership, extracts trace context, persists the event,
+// and commits its offset only after successful processing or duplicate detection.
 func (w *Worker) processMessageWithStop(
 	ctx context.Context,
 	stopCtx context.Context,
@@ -400,6 +413,8 @@ func (w *Worker) processMessageWithStop(
 	return nil
 }
 
+// moveToDLQ publishes the original record and failure metadata to the DLQ, then commits
+// the source offset only after the DLQ producer confirms delivery.
 func (w *Worker) moveToDLQ(
 	ctx context.Context,
 	stopCtx context.Context,
@@ -485,6 +500,8 @@ func (w *Worker) moveToDLQ(
 	return nil
 }
 
+// retry executes an operation with capped exponential backoff while pausing Kafka intake.
+// It continues polling into a bounded queue and verifies partition ownership between attempts.
 func (w *Worker) retry(
 	ctx context.Context,
 	stopCtx context.Context,
@@ -579,6 +596,8 @@ func (w *Worker) retry(
 	}
 }
 
+// waitBackoff waits for the retry delay while polling at a bounded cadence to service
+// Kafka group events and retain newly fetched records in the pending queue.
 func (w *Worker) waitBackoff(
 	ctx context.Context,
 	stopCtx context.Context,
@@ -650,6 +669,7 @@ func (w *Worker) waitBackoff(
 	}
 }
 
+// commitWithRetry retries retriable offset-commit failures and pauses intake while waiting.
 func (w *Worker) commitWithRetry(
 	ctx context.Context,
 	stopCtx context.Context,
@@ -727,6 +747,8 @@ func (w *Worker) commitWithRetry(
 	}
 }
 
+// resumeAfterAssignmentLoss resumes intake when an error interrupted a paused retry
+// because the message's partition assignment was revoked.
 func (w *Worker) resumeAfterAssignmentLoss(
 	paused bool,
 	cause error,
@@ -748,6 +770,7 @@ func (w *Worker) resumeAfterAssignmentLoss(
 	return cause
 }
 
+// retryDelay calculates capped exponential backoff for a one-based attempt number.
 func retryDelay(
 	base time.Duration,
 	max time.Duration,
@@ -770,6 +793,7 @@ func retryDelay(
 	return delay
 }
 
+// isPermanentMessageError identifies invalid event payloads that should be sent to the DLQ.
 func isPermanentMessageError(err error) bool {
 	return errors.Is(err, core_events.ErrMalformedJSON) ||
 		errors.Is(err, core_events.ErrInvalidEnvelope) ||
@@ -777,6 +801,7 @@ func isPermanentMessageError(err error) bool {
 		errors.Is(err, core_events.ErrUnsupportedSchemaVersion)
 }
 
+// extractEventID best-effort extracts the event ID for diagnostics when full decoding fails.
 func extractEventID(payload []byte) string {
 	var event struct {
 		EventID string `json:"event_id"`
@@ -789,12 +814,14 @@ func extractEventID(payload []byte) string {
 	return event.EventID
 }
 
+// eventMetadata contains fields extracted from an event for telemetry and structured logs.
 type eventMetadata struct {
 	EventID   string
 	EventType string
 	TaskID    int64
 }
 
+// readEventMetadata extracts event identity and aggregate details without validating the envelope.
 func readEventMetadata(payload []byte) eventMetadata {
 	var metadata eventMetadata
 	var envelope struct {
@@ -811,6 +838,7 @@ func readEventMetadata(payload []byte) eventMetadata {
 	return metadata
 }
 
+// traceCarrierFromMessage converts Kafka trace headers into the carrier used by W3C extraction.
 func traceCarrierFromMessage(headers []kafka.Header) propagation.MapCarrier {
 	carrier := propagation.MapCarrier{}
 	for _, header := range headers {
@@ -821,6 +849,7 @@ func traceCarrierFromMessage(headers []kafka.Header) propagation.MapCarrier {
 	return carrier
 }
 
+// traceHeadersFromContext injects the current W3C trace context into Kafka headers.
 func traceHeadersFromContext(ctx context.Context) []kafka.Header {
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
@@ -833,6 +862,7 @@ func traceHeadersFromContext(ctx context.Context) []kafka.Header {
 	return headers
 }
 
+// messageLogFields builds consistent Kafka location and event identity fields for log entries.
 func (w *Worker) messageLogFields(message *kafka_consumer.Message) []zap.Field {
 	metadata := readEventMetadata(message.Value)
 	fields := []zap.Field{
