@@ -9,6 +9,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/core/domain"
 )
 
+// Set serializes global statistics as JSON and stores them with the supplied expiration.
 func (c *StatisticsCache) Set(
 	ctx context.Context,
 	statistics domain.Statistics,
