@@ -2,6 +2,7 @@ package users_transport_http
 
 import "github.com/Reigor1/20h-project/internal/core/domain"
 
+// UserDTOResponse is the JSON representation of a user returned by the API.
 type UserDTOResponse struct {
 	ID          int     `json:"id"           example:"10"`
 	Version     int     `json:"version"      example:"3"`
@@ -9,6 +10,7 @@ type UserDTOResponse struct {
 	PhoneNumber *string `json:"phone_number" example:"+79998887766"`
 }
 
+// userDTOFromDomain maps a domain User to the public HTTP response shape.
 func userDTOFromDomain(user domain.User) UserDTOResponse {
 	return UserDTOResponse{
 		ID:          user.ID,
@@ -18,6 +20,7 @@ func userDTOFromDomain(user domain.User) UserDTOResponse {
 	}
 }
 
+// usersDTOFromDomains converts a slice of domain users into response DTOs.
 func usersDTOFromDomains(users []domain.User) []UserDTOResponse {
 	usersDTO := make([]UserDTOResponse, len(users))
 
