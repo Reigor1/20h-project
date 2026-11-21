@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TestParseWorkerStages verifies the end-to-end or integration behavior represented by its test scenarios.
 func TestParseWorkerStages(t *testing.T) {
 	got, err := parseWorkerStages("75, 100, 150")
 	if err != nil {
@@ -18,6 +19,7 @@ func TestParseWorkerStages(t *testing.T) {
 	}
 }
 
+// TestParseWorkerStagesRejectsInvalidValues verifies the end-to-end or integration behavior represented by its test scenarios.
 func TestParseWorkerStagesRejectsInvalidValues(t *testing.T) {
 	for _, value := range []string{
 		"",
@@ -35,6 +37,7 @@ func TestParseWorkerStagesRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+// TestPercentileDuration verifies the end-to-end or integration behavior represented by its test scenarios.
 func TestPercentileDuration(t *testing.T) {
 	samples := []time.Duration{
 		time.Millisecond,
@@ -63,6 +66,7 @@ func TestPercentileDuration(t *testing.T) {
 	}
 }
 
+// TestLoadProfiles verifies the end-to-end or integration behavior represented by its test scenarios.
 func TestLoadProfiles(t *testing.T) {
 	config := Config{
 		LoadProfile:         "standard",
