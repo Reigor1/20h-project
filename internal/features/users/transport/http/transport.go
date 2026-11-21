@@ -8,10 +8,12 @@ import (
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
 )
 
+// UsersHTTPHandler adapts user service operations to HTTP requests and responses.
 type UsersHTTPHandler struct {
 	usersService UserService
 }
 
+// UserService defines the user use cases exposed by the HTTP transport.
 type UserService interface {
 	CreateUser(
 		ctx context.Context,
@@ -41,6 +43,7 @@ type UserService interface {
 	) (domain.User, error)
 }
 
+// NewUsersHTTPHandler creates the user handler with its service dependency.
 func NewUsersHTTPHandler(
 	usersService UserService,
 ) *UsersHTTPHandler {
@@ -49,6 +52,7 @@ func NewUsersHTTPHandler(
 	}
 }
 
+// Routes returns the create, list, read, delete, and patch endpoints for Users.
 func (h *UsersHTTPHandler) Routes() []core_http_server.Route {
 	return []core_http_server.Route{
 		{
