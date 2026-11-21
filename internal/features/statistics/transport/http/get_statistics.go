@@ -11,6 +11,7 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 )
 
+// GetStatisticsResponse is the JSON representation of aggregate task statistics.
 type GetStatisticsResponse struct {
 	TasksCreated               int      `json:"tasks_created"                 example:"100"`
 	TasksCompleted             int      `json:"tasks_completed"               example:"75"`
@@ -60,6 +61,8 @@ func (h *StatisticsHTTPHandler) GetStatistics(rw http.ResponseWriter, r *http.Re
 	responseHandler.JSONResponse(response, http.StatusOK)
 }
 
+// toDTOFromDomain converts domain statistics into the HTTP response representation,
+// formatting the optional average completion duration as a string.
 func toDTOFromDomain(statistics domain.Statistics) GetStatisticsResponse {
 	var avgTime *string
 	if statistics.TasksAverageCompletionTime != nil {
@@ -75,6 +78,7 @@ func toDTOFromDomain(statistics domain.Statistics) GetStatisticsResponse {
 	}
 }
 
+// getUserIDFromToQueryParams parses the optional user_id, from, and to query parameters.
 func getUserIDFromToQueryParams(r *http.Request) (*int, *time.Time, *time.Time, error) {
 	const (
 		userIDQueryParamKey = "user_id"
