@@ -17,6 +17,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
+// TestChainMiddleware verifies middleware execution order around the next handler.
 func TestChainMiddleware(t *testing.T) {
 	events := []string{}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -83,6 +84,7 @@ func TestChainMiddleware(t *testing.T) {
 	}
 }
 
+// TestRequestID checks generation and propagation of the X-Request-ID header.
 func TestRequestID(t *testing.T) {
 	t.Run("generated UUID reaches response and downstream", func(t *testing.T) {
 		var downstreamID string
@@ -123,6 +125,7 @@ func TestRequestID(t *testing.T) {
 	})
 }
 
+// TestCORS verifies allowed-origin headers and preflight OPTIONS handling.
 func TestCORS(t *testing.T) {
 	const allowedOrigin = "http://localhost:5050"
 	for _, tc := range []struct {
@@ -196,6 +199,7 @@ func TestCORS(t *testing.T) {
 	}
 }
 
+// TestLoggerAddsRequestFieldsToContext checks that request ID and URL are attached to the context logger.
 func TestLoggerAddsRequestFieldsToContext(t *testing.T) {
 	logger, logs := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/items?limit=5", nil)
@@ -217,6 +221,7 @@ func TestLoggerAddsRequestFieldsToContext(t *testing.T) {
 	}
 }
 
+// TestTraceLogsRequestLifecycle verifies request-start and completion logging with status and latency.
 func TestTraceLogsRequestLifecycle(t *testing.T) {
 	logger, logs := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/trace", nil)
@@ -244,6 +249,7 @@ func TestTraceLogsRequestLifecycle(t *testing.T) {
 	}
 }
 
+// TestTraceUsesImplicitOKStatus checks that an uncommitted response is reported as HTTP 200.
 func TestTraceUsesImplicitOKStatus(t *testing.T) {
 	logger, logs := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -259,6 +265,7 @@ func TestTraceUsesImplicitOKStatus(t *testing.T) {
 	}
 }
 
+// TestPanicMiddleware verifies that downstream panics are recovered and converted to HTTP errors.
 func TestPanicMiddleware(t *testing.T) {
 	logger, _ := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -299,6 +306,7 @@ func TestPanicMiddleware(t *testing.T) {
 	})
 }
 
+// TestDummyCallsNextBetweenLogs checks the demonstration middleware's before/after ordering.
 func TestDummyCallsNextBetweenLogs(t *testing.T) {
 	logger, logs := testutil.NewObservedLogger()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -320,6 +328,8 @@ func TestDummyCallsNextBetweenLogs(t *testing.T) {
 	}
 }
 
+// TestTraceLogsIncludeActiveHTTPSpanContext verifies that logs created during an HTTP span
+// contain the active trace and span identifiers.
 func TestTraceLogsIncludeActiveHTTPSpanContext(t *testing.T) {
 	logger, logs := testutil.NewObservedLogger()
 
