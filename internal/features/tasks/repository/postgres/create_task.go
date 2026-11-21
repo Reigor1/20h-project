@@ -11,6 +11,8 @@ import (
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 )
 
+// CreateTask inserts the task and its task.created Outbox event in one transaction.
+// A foreign-key violation for the owner is translated into the domain not-found error.
 func (r *TasksRepository) CreateTask(
 	ctx context.Context,
 	task domain.Task,
@@ -89,6 +91,7 @@ func (r *TasksRepository) CreateTask(
 	return createdTask, nil
 }
 
+// scanTask decodes a task row and converts the database model into the domain entity.
 func scanTask(row core_postgres_pool.Row) (domain.Task, error) {
 	var taskModel TaskModel
 
