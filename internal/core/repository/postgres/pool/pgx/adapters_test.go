@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// TestMapErrors verifies translation of pgx errors into shared repository error sentinels.
 func TestMapErrors(t *testing.T) {
 	foreignKeyError := &pgconn.PgError{Code: "23503", Message: "foreign key violation"}
 	otherPostgresError := &pgconn.PgError{Code: "23505", Message: "unique violation"}
@@ -56,6 +57,7 @@ func TestMapErrors(t *testing.T) {
 	}
 }
 
+// TestPGXRowScanMapsErrors checks that row scan failures pass through the error mapper.
 func TestPGXRowScanMapsErrors(t *testing.T) {
 	foreignKeyError := &pgconn.PgError{Code: "23503", Message: "foreign key violation"}
 	otherPostgresError := &pgconn.PgError{Code: "23505", Message: "unique violation"}
@@ -112,20 +114,24 @@ func TestPGXRowScanMapsErrors(t *testing.T) {
 	}
 }
 
+// fakePGXRow is a controllable pgx.Row implementation for testing scan error mapping.
 type fakePGXRow struct {
 	scanErr   error
 	scanCalls int
 }
 
+// Scan returns the configured test error instead of reading a database row.
 func (r *fakePGXRow) Scan(...any) error {
 	r.scanCalls++
 	return r.scanErr
 }
 
+// RawValues satisfies pgx.Row and returns no raw column values in these tests.
 func (*fakePGXRow) RawValues() [][]byte {
 	return nil
 }
 
+// Conn satisfies pgx.Row and returns no connection for the fake row.
 func (*fakePGXRow) Conn() *pgx.Conn {
 	return nil
 }
