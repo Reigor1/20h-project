@@ -8,6 +8,8 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// PathTask applies a validated partial update, checks ownership and version,
+// and records the resulting task event in the same transaction.
 func (s *TasksService) PathTask(
 	ctx context.Context,
 	id int,
