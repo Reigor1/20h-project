@@ -18,6 +18,7 @@ Backend-проект на Go, предназначенный для изучен
 - [Наблюдаемость](#наблюдаемость)
 - [Локальный запуск](#локальный-запуск)
 - [Запуск через Docker Compose](#запуск-через-docker-compose)
+- [Остановка и очистка](#остановка-и-очистка)
 - [Конфигурация](#конфигурация)
 - [Тестирование](#тестирование)
 - [Полезные команды Make](#полезные-команды-make)
@@ -407,7 +408,7 @@ make observability-up
 
 - Go 1.26.0.
 - Docker Engine или Docker Desktop с плагином Docker Compose.
-- GNU Make и Bash-совместимая оболочка (Git Bash или WSL в Windows).
+- GNU Make и Bash-совместимая оболочка (Git Bash в Windows).
 - C-компилятор и toolchain для нативной сборки <code>confluent-kafka-go</code>.
 
 ### 1. Настройка окружения
@@ -424,16 +425,9 @@ cp .env.example .env
 
 Makefile подключает <code>.env</code> и экспортирует его переменные. Создайте этот файл до запуска целей Make.
 
-### 2. Запуск PostgreSQL и применение миграций
+### 2. Запуск приложения и инфраструктуры
 
-~~~bash
-make env-postgres-up
-make migrate-up
-~~~
-
-Миграции создают схему <code>todoapp</code> и таблицы <code>users</code>, <code>tasks</code>, <code>outbox</code> и <code>task_activity</code>.
-
-### 3. Запуск стека приложения
+Обе цели запуска самостоятельно поднимают PostgreSQL, дожидаются состояния `healthy` по Docker healthcheck и применяют миграции перед запуском приложения. Поэтому вручную выполнять `make env-postgres-up` и `make migrate-up` перед первым запуском не требуется.
 
 Чтобы запустить Go API локально, а инфраструктуру и Activity Worker — в Docker:
 
@@ -441,26 +435,27 @@ make migrate-up
 make todoapp-run-locally
 ~~~
 
-Эта цель запускает Redis, PostgreSQL с пробросом порта, сервисы наблюдаемости, кластер Kafka, топики приложения, Kafka UI и заданное количество реплик Activity Worker. После этого она запускает <code>cmd/todoapp</code> на хостовой машине.
+Цель запускает Redis, PostgreSQL, миграции, проброс порта PostgreSQL, сервисы наблюдаемости, кластер Kafka и топики, а затем Activity Worker. После этого она запускает `cmd/todoapp` на хостовой машине.
 
-Миграции базы данных выполняются отдельно и должны быть применены до запуска приложения.
-
-## Запуск через Docker Compose
-
-После создания и настройки <code>.env</code> запустите PostgreSQL и примените миграции:
+Kafka UI в этом режиме можно запустить отдельно:
 
 ~~~bash
-make env-postgres-up
-make migrate-up
+make kafka-ui-up
 ~~~
 
-Затем запустите API и вспомогательные сервисы в Docker:
+Миграции запускаются через Compose и ожидают готовности PostgreSQL благодаря условию `service_healthy`.
+## Запуск через Docker Compose
+После создания и настройки `.env` запустите весь стек:
 
 ~~~bash
 make todoapp-run-in-docker
 ~~~
 
-API доступно на порту <code>5050</code>. Внутри сети Compose сервисы обращаются друг к другу по именам Docker-сервисов, например <code>todoapp-postgres</code>, <code>redis</code>, <code>kafka-1</code> и <code>otel-collector</code>.
+Цель самостоятельно запускает Redis и PostgreSQL, ожидает готовности PostgreSQL, применяет миграции, поднимает проброс порта базы данных, сервисы наблюдаемости и кластер Kafka, создаёт и настраивает топики, запускает Kafka UI и Activity Worker, а затем собирает и запускает HTTP API в Docker.
+
+Отдельно запускать `env-postgres-up` и `migrate-up` перед этой командой не нужно.
+
+API доступно на порту `5050`. Внутри сети Compose сервисы обращаются друг к другу по именам Docker-сервисов, например `todoapp-postgres`, `redis`, `kafka-1` и `otel-collector`.
 
 ### Полезные команды для управления сервисами
 
@@ -475,6 +470,63 @@ make observability-down
 ~~~
 
 Три брокера Kafka публикуют на хосте порты <code>29092</code>, <code>39092</code> и <code>49092</code>. API и интерфейсы мониторинга предназначены для локальной разработки.
+
+
+## Остановка и очистка
+
+### Обычная остановка
+
+~~~bash
+make todoapp-down
+~~~
+
+Команда выполняет `docker compose down --remove-orphans`: останавливает и удаляет контейнеры Compose, удаляет сети проекта и orphan-контейнеры. Именованные Docker volumes и содержимое `out/` сохраняются.
+
+Если API запущено локально через `make todoapp-run-locally`, сначала остановите процесс Go сочетанием `Ctrl+C`. Docker Compose не управляет этим процессом.
+
+### Выборочная очистка данных
+
+Очистка наблюдаемости:
+
+~~~bash
+make observability-down
+make observability-cleanup
+~~~
+
+Сначала остановите сервисы наблюдаемости, затем выполните очистку. Цель `observability-cleanup` удаляет локальные данные Prometheus, Grafana, Tempo, Loki и Alloy из каталогов `out/`. История метрик, трассировок, логов и локальное состояние Grafana будут потеряны. Конфигурация в `monitoring/` не удаляется.
+
+Удаление результатов нагрузочного тестирования:
+
+~~~bash
+make load-tests-cleanup
+~~~
+
+Цель удаляет только каталог `out/load-tests`.
+
+Удаление файлов логов:
+
+~~~bash
+make logs-cleanup
+~~~
+
+Цель удаляет только каталог `out/logs`. Перед очисткой остановите процессы, которые могут продолжать записывать логи.
+
+Выборочные цели очистки запрашивают подтверждение перед удалением данных.
+
+### Полный сброс окружения
+
+~~~bash
+make todoapp-cleanup
+~~~
+
+Цель требует ввести `yes` для подтверждения. После подтверждения она:
+
+1. Останавливает Compose-проект и удаляет его контейнеры, сети, orphan-контейнеры и управляемые Compose volumes.
+2. Удаляет весь каталог `out/`, включая данные PostgreSQL, Kafka, наблюдаемости, логи и результаты нагрузочного тестирования.
+
+Полный сброс необратимо удаляет локальные данные приложения. Исходный код, конфигурация в репозитории, файл `.env`, Docker images и build cache сохраняются. External Docker volumes, не управляемые Compose, этой командой не удаляются.
+
+Перед запуском полного сброса остановите локально запущенный Go-процесс через `Ctrl+C`.
 
 ## Конфигурация
 
@@ -579,6 +631,11 @@ go build ./cmd/activity-dlq-replay
 | <code>activity-workers-up</code> / <code>activity-workers-down</code> | Запустить или остановить реплики Activity Worker |
 | <code>todoapp-run-locally</code> | Запустить зависимости и API на хостовой машине |
 | <code>todoapp-run-in-docker</code> | Запустить стек приложения в Docker |
+| <code>todoapp-down</code> | Остановить Compose-проект без удаления volumes и локальных данных |
+| <code>todoapp-cleanup</code> | Полностью сбросить Compose-окружение и удалить локальные runtime-данные |
+| <code>observability-cleanup</code> | Удалить локальные данные Prometheus, Grafana, Tempo, Loki и Alloy |
+| <code>load-tests-cleanup</code> | Удалить результаты нагрузочного тестирования из <code>out/load-tests</code> |
+| <code>logs-cleanup</code> | Удалить локальные файлы логов из <code>out/logs</code> |
 | <code>observability-up</code> / <code>observability-down</code> | Запустить или остановить стек мониторинга |
 | <code>tests-integration</code> | Запустить интеграционные тесты PostgreSQL и инфраструктуры |
 | <code>tests-e2e</code> | Запустить end-to-end тесты API |
