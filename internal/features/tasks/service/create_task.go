@@ -8,6 +8,8 @@ import (
 	core_observability "github.com/Reigor1/20h-project/internal/core/observability"
 )
 
+// CreateTask validates the requested task, verifies its owner, and persists the task
+// together with the corresponding lifecycle event in the same transaction.
 func (s *TasksService) CreateTask(
 	ctx context.Context,
 	task domain.Task,
