@@ -7,6 +7,7 @@ import (
 	core_logger "github.com/Reigor1/20h-project/internal/core/logger"
 )
 
+// Dummy returns demonstration middleware that logs a marker before and after the next handler.
 func Dummy(s string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
