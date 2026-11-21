@@ -8,10 +8,12 @@ import (
 	core_http_server "github.com/Reigor1/20h-project/internal/core/transport/http/server"
 )
 
+// TasksHTTPHandler adapts task service operations to HTTP requests and responses.
 type TasksHTTPHandler struct {
 	tasksService TasksService
 }
 
+// TasksService defines the task use cases exposed by the HTTP transport.
 type TasksService interface {
 	CreateTask(
 		ctx context.Context,
@@ -42,6 +44,7 @@ type TasksService interface {
 	) (domain.Task, error)
 }
 
+// NewTasksHTTPHandler creates the task handler with its service dependency.
 func NewTasksHTTPHandler(
 	tasksService TasksService,
 ) *TasksHTTPHandler {
@@ -50,6 +53,7 @@ func NewTasksHTTPHandler(
 	}
 }
 
+// Routes returns the create, list, read, delete, and patch endpoints for Tasks.
 func (h *TasksHTTPHandler) Routes() []core_http_server.Route {
 	return []core_http_server.Route{
 		{
