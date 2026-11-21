@@ -7,12 +7,16 @@ import (
 )
 
 // RepositoryOperationTimeout is the operation timeout used by repository test pools.
+// RepositoryOperationTimeout is the maximum deadline expected for repository test operations.
 const RepositoryOperationTimeout = 3 * time.Second
 
 // RepositoryContextKey identifies the value used to verify parent-context preservation.
+// RepositoryContextKey identifies a test value used to check context propagation.
 type RepositoryContextKey struct{}
 
 // AssertRepositoryContext checks that a repository passed a derived context to its pool.
+// AssertRepositoryContext verifies that a repository passes a derived, time-bounded context
+// to its pool while preserving values from the parent context.
 func AssertRepositoryContext(t *testing.T, got, parent context.Context) {
 	t.Helper()
 
