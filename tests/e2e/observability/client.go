@@ -11,18 +11,22 @@ import (
 	"time"
 )
 
+// maxResponseBodyBytes defines a shared limit or value used by the test workflow.
 const maxResponseBodyBytes = 1 << 20
 
+// apiClient stores the data required by the corresponding test scenario.
 type apiClient struct {
 	httpClient *http.Client
 	baseURL    string
 }
 
+// apiResponse stores the data required by the corresponding test scenario.
 type apiResponse struct {
 	StatusCode int
 	Body       []byte
 }
 
+// newAPIClient constructs the test client or fixture required by the scenario.
 func newAPIClient(config Config) *apiClient {
 	maxConnections := config.SteadyStateWorkers
 	if len(workloadStages) > 0 && workloadStages[len(workloadStages)-1] > maxConnections {
@@ -55,6 +59,7 @@ func newAPIClient(config Config) *apiClient {
 	}
 }
 
+// do sends an HTTP request as part of the observability test scenario.
 func (c *apiClient) do(
 	ctx context.Context,
 	method string,
@@ -134,6 +139,7 @@ func (c *apiClient) do(
 	}, nil
 }
 
+// expectStatus supports setup, execution, or verification of the corresponding test scenario.
 func expectStatus(
 	response apiResponse,
 	method string,
@@ -159,6 +165,7 @@ func expectStatus(
 	)
 }
 
+// decodeJSON supports setup, execution, or verification of the corresponding test scenario.
 func decodeJSON(response apiResponse, destination any) error {
 	if err := json.Unmarshal(response.Body, destination); err != nil {
 		return fmt.Errorf("decode response: %w", err)
