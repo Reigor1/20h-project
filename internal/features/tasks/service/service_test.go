@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
+// tasksRepositoryStub captures service or repository calls and returns configured test results.
 type tasksRepositoryStub struct {
 	t *testing.T
 
@@ -51,11 +52,13 @@ type tasksRepositoryStub struct {
 	calls []string
 }
 
+// newTasksRepositoryStub creates the test fixture used by this test file.
 func newTasksRepositoryStub(t *testing.T) *tasksRepositoryStub {
 	t.Helper()
 	return &tasksRepositoryStub{t: t}
 }
 
+// CreateTask implements the corresponding repository operation for tracing or service tests.
 func (r *tasksRepositoryStub) CreateTask(
 	_ context.Context,
 	task domain.Task,
@@ -71,6 +74,7 @@ func (r *tasksRepositoryStub) CreateTask(
 	return r.createTaskResult, r.createTaskError
 }
 
+// GetTasks implements the corresponding repository operation for tracing or service tests.
 func (r *tasksRepositoryStub) GetTasks(
 	_ context.Context,
 	userID *int,
@@ -90,6 +94,7 @@ func (r *tasksRepositoryStub) GetTasks(
 	return r.getTasksResult, r.getTasksError
 }
 
+// GetTask implements the corresponding repository operation for tracing or service tests.
 func (r *tasksRepositoryStub) GetTask(
 	_ context.Context,
 	id int,
@@ -105,6 +110,7 @@ func (r *tasksRepositoryStub) GetTask(
 	return r.getTaskResult, r.getTaskError
 }
 
+// DeleteTask implements the corresponding repository operation for tracing or service tests.
 func (r *tasksRepositoryStub) DeleteTask(
 	_ context.Context,
 	id int,
@@ -120,6 +126,7 @@ func (r *tasksRepositoryStub) DeleteTask(
 	return r.deleteTaskError
 }
 
+// PatchTask implements the corresponding repository operation for tracing or service tests.
 func (r *tasksRepositoryStub) PatchTask(
 	_ context.Context,
 	id int,
@@ -139,6 +146,7 @@ func (r *tasksRepositoryStub) PatchTask(
 	return r.patchTaskResult, r.patchTaskError
 }
 
+// TestCreateTask verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateTask(t *testing.T) {
 	description := "Prepare a clear report"
 	createdAt := time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC)
@@ -184,6 +192,7 @@ func TestCreateTask(t *testing.T) {
 	}
 }
 
+// TestCreateTaskRejectsInvalidTask verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateTaskRejectsInvalidTask(t *testing.T) {
 	validCreatedAt := time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC)
 	emptyTitleTask := domain.NewTask(0, 0, "", nil, false, validCreatedAt, nil, 23)
@@ -222,6 +231,7 @@ func TestCreateTaskRejectsInvalidTask(t *testing.T) {
 	}
 }
 
+// TestCreateTaskReturnsRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestCreateTaskReturnsRepositoryError(t *testing.T) {
 	repositoryError := errors.New("storage unavailable")
 	createdAt := time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC)
@@ -244,6 +254,7 @@ func TestCreateTaskReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// TestGetTask verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetTask(t *testing.T) {
 	wantTask := sampleTask()
 	repository := newTasksRepositoryStub(t)
@@ -263,6 +274,7 @@ func TestGetTask(t *testing.T) {
 	}
 }
 
+// TestGetTaskReturnsRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetTaskReturnsRepositoryError(t *testing.T) {
 	repositoryError := core_errors.ErrNotFound
 	repository := newTasksRepositoryStub(t)
@@ -283,6 +295,7 @@ func TestGetTaskReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// TestGetTasksPassesFiltersAndPaginationToRepository verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetTasksPassesFiltersAndPaginationToRepository(t *testing.T) {
 	userID := 23
 	limit := 20
@@ -317,6 +330,7 @@ func TestGetTasksPassesFiltersAndPaginationToRepository(t *testing.T) {
 	}
 }
 
+// TestGetTasksAllowsUnsetPaginationAndEmptyResults verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetTasksAllowsUnsetPaginationAndEmptyResults(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectGetTasks = true
@@ -344,6 +358,7 @@ func TestGetTasksAllowsUnsetPaginationAndEmptyResults(t *testing.T) {
 	}
 }
 
+// TestGetTasksRejectsNegativePagination verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetTasksRejectsNegativePagination(t *testing.T) {
 	negativeValue := -1
 	tests := []struct {
@@ -386,6 +401,7 @@ func TestGetTasksRejectsNegativePagination(t *testing.T) {
 	}
 }
 
+// TestGetTasksReturnsRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestGetTasksReturnsRepositoryError(t *testing.T) {
 	repositoryError := errors.New("query failed")
 	repository := newTasksRepositoryStub(t)
@@ -406,6 +422,7 @@ func TestGetTasksReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// TestPathTaskAppliesPatchBeforeRepositoryUpdate verifies the behavior and expected outcomes described by its test scenarios.
 func TestPathTaskAppliesPatchBeforeRepositoryUpdate(t *testing.T) {
 	oldDescription := "Review the draft"
 	updatedTitle := "Publish report"
@@ -450,6 +467,7 @@ func TestPathTaskAppliesPatchBeforeRepositoryUpdate(t *testing.T) {
 	}
 }
 
+// TestPathTaskDoesNotCallPatchTaskForEmptyPatch verifies the behavior and expected outcomes described by its test scenarios.
 func TestPathTaskDoesNotCallPatchTaskForEmptyPatch(t *testing.T) {
 	initialTask := sampleTask()
 	repository := newTasksRepositoryStub(t)
@@ -472,6 +490,7 @@ func TestPathTaskDoesNotCallPatchTaskForEmptyPatch(t *testing.T) {
 	}
 }
 
+// TestPathTaskCompletesTaskAndPreservesUnchangedFields verifies the behavior and expected outcomes described by its test scenarios.
 func TestPathTaskCompletesTaskAndPreservesUnchangedFields(t *testing.T) {
 	createdAt := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
 	initialTask := domain.NewTask(42, 7, "Complete report", nil, false, createdAt, nil, 23)
@@ -515,6 +534,7 @@ func TestPathTaskCompletesTaskAndPreservesUnchangedFields(t *testing.T) {
 	}
 }
 
+// TestPathTaskReturnsGetErrorWithoutUpdating verifies the behavior and expected outcomes described by its test scenarios.
 func TestPathTaskReturnsGetErrorWithoutUpdating(t *testing.T) {
 	repositoryError := core_errors.ErrNotFound
 	repository := newTasksRepositoryStub(t)
@@ -535,6 +555,7 @@ func TestPathTaskReturnsGetErrorWithoutUpdating(t *testing.T) {
 	}
 }
 
+// TestPathTaskRejectsInvalidPatchWithoutUpdating verifies the behavior and expected outcomes described by its test scenarios.
 func TestPathTaskRejectsInvalidPatchWithoutUpdating(t *testing.T) {
 	initialTask := sampleTask()
 	repository := newTasksRepositoryStub(t)
@@ -560,6 +581,7 @@ func TestPathTaskRejectsInvalidPatchWithoutUpdating(t *testing.T) {
 	}
 }
 
+// TestPathTaskReturnsPatchRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestPathTaskReturnsPatchRepositoryError(t *testing.T) {
 	repositoryError := core_errors.ErrConflict
 	initialTask := sampleTask()
@@ -597,6 +619,7 @@ func TestPathTaskReturnsPatchRepositoryError(t *testing.T) {
 	}
 }
 
+// TestDeleteTask verifies the behavior and expected outcomes described by its test scenarios.
 func TestDeleteTask(t *testing.T) {
 	repository := newTasksRepositoryStub(t)
 	repository.expectDeleteTask = true
@@ -611,6 +634,7 @@ func TestDeleteTask(t *testing.T) {
 	}
 }
 
+// TestDeleteTaskReturnsRepositoryError verifies the behavior and expected outcomes described by its test scenarios.
 func TestDeleteTaskReturnsRepositoryError(t *testing.T) {
 	repositoryError := core_errors.ErrNotFound
 	repository := newTasksRepositoryStub(t)
@@ -628,10 +652,12 @@ func TestDeleteTaskReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// sampleTask returns a reusable Task fixture for service tests.
 func sampleTask() domain.Task {
 	return sampleTaskWithID(42)
 }
 
+// sampleTaskWithID returns a reusable Task fixture for service tests.
 func sampleTaskWithID(id int) domain.Task {
 	description := "Review the submitted work"
 	createdAt := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
@@ -649,10 +675,12 @@ func sampleTaskWithID(id int) domain.Task {
 	)
 }
 
+// boolPointer creates a boolean pointer for patch test cases.
 func boolPointer(value bool) *bool {
 	return &value
 }
 
+// newTasksServiceForTest creates the test fixture used by this test file.
 func newTasksServiceForTest(repository TasksRepository) *TasksService {
 	return NewTasksService(repository, noop.NewTracerProvider())
 }
