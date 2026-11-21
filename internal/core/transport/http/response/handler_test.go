@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
+// TestJSONResponse verifies successful JSON encoding, status, and content type.
 func TestJSONResponse(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -74,6 +75,7 @@ func TestJSONResponse(t *testing.T) {
 	}
 }
 
+// TestJSONResponseLogsEncodingError checks logging when a response value cannot be encoded.
 func TestJSONResponseLogsEncodingError(t *testing.T) {
 	logger, logs := newObservedLogger()
 	response := httptest.NewRecorder()
@@ -87,6 +89,7 @@ func TestJSONResponseLogsEncodingError(t *testing.T) {
 	assertSingleResponseLog(t, logs, "write HTTP response", zapcore.ErrorLevel)
 }
 
+// TestJSONResponseLogsWriterError checks logging when the underlying response writer fails.
 func TestJSONResponseLogsWriterError(t *testing.T) {
 	logger, logs := newObservedLogger()
 	writer := &errorResponseWriter{header: make(http.Header)}
@@ -97,6 +100,7 @@ func TestJSONResponseLogsWriterError(t *testing.T) {
 	assertSingleResponseLog(t, logs, "write HTTP response", zapcore.ErrorLevel)
 }
 
+// TestNoContentResponse verifies the empty HTTP 204 response behavior.
 func TestNoContentResponse(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler := NewHTTPResponseHandler(newNopLogger(), response)
@@ -111,6 +115,7 @@ func TestNoContentResponse(t *testing.T) {
 	}
 }
 
+// TestErrorResponse checks serialization of the standard API error payload.
 func TestErrorResponse(t *testing.T) {
 	unknownError := errors.New("database unavailable")
 	tests := []struct {
@@ -175,6 +180,7 @@ func TestErrorResponse(t *testing.T) {
 	}
 }
 
+// TestPanicResponse verifies conversion of a recovered panic into the API error response.
 func TestPanicResponse(t *testing.T) {
 	const (
 		panicValue = "unexpected state"
@@ -200,15 +206,18 @@ func TestPanicResponse(t *testing.T) {
 	assertLoggedError(t, logs, message, zapcore.ErrorLevel, wantError)
 }
 
+// newNopLogger creates a logger that discards output for response-handler tests.
 func newNopLogger() *core_logger.Logger {
 	return &core_logger.Logger{Logger: zap.NewNop()}
 }
 
+// newObservedLogger creates an in-memory logger for assertions about response diagnostics.
 func newObservedLogger() (*core_logger.Logger, *observer.ObservedLogs) {
 	core, logs := observer.New(zapcore.DebugLevel)
 	return &core_logger.Logger{Logger: zap.New(core)}, logs
 }
 
+// assertJSONContentType checks the JSON content type on a recorded HTTP response.
 func assertJSONContentType(t *testing.T, response *httptest.ResponseRecorder) {
 	t.Helper()
 
@@ -217,6 +226,7 @@ func assertJSONContentType(t *testing.T, response *httptest.ResponseRecorder) {
 	}
 }
 
+// assertSingleResponseLog verifies that exactly one log entry has the expected message and level.
 func assertSingleResponseLog(t *testing.T, logs *observer.ObservedLogs, message string, wantLevel zapcore.Level) {
 	t.Helper()
 	entries := logs.FilterMessage(message).All()
@@ -225,6 +235,7 @@ func assertSingleResponseLog(t *testing.T, logs *observer.ObservedLogs, message 
 	}
 }
 
+// assertLoggedError verifies the response log contains the expected error value.
 func assertLoggedError(t *testing.T, logs *observer.ObservedLogs, message string, wantLevel zapcore.Level, wantError string) {
 	t.Helper()
 	entries := logs.FilterMessage(message).All()
@@ -239,16 +250,20 @@ func assertLoggedError(t *testing.T, logs *observer.ObservedLogs, message string
 	}
 }
 
+// errorResponseWriter simulates a ResponseWriter whose body write returns a configured error.
 type errorResponseWriter struct {
 	header http.Header
 }
 
+// Header returns the header map required by the http.ResponseWriter contract.
 func (w *errorResponseWriter) Header() http.Header {
 	return w.header
 }
 
+// WriteHeader is a no-op because these tests focus on body-write failures.
 func (*errorResponseWriter) WriteHeader(int) {}
 
+// Write reports the configured failure to simulate a broken response connection.
 func (*errorResponseWriter) Write([]byte) (int, error) {
 	return 0, errors.New("response writer failed")
 }
