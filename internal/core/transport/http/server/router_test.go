@@ -9,6 +9,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// TestAPIVersionRouterRegistersMethodsAndPaths verifies method and path registration under an API version.
 func TestAPIVersionRouterRegistersMethodsAndPaths(t *testing.T) {
 	var receivedPath string
 	router := NewAPIVersionRouter(ApiVersion1)
@@ -62,6 +63,7 @@ func TestAPIVersionRouterRegistersMethodsAndPaths(t *testing.T) {
 	}
 }
 
+// TestAPIVersionRouterMiddlewareAndVersions checks router middleware isolation between API versions.
 func TestAPIVersionRouterMiddlewareAndVersions(t *testing.T) {
 	events := []string{}
 	versionOne := NewAPIVersionRouter(
