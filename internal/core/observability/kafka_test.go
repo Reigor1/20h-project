@@ -9,15 +9,19 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
+// testOutboxMetricsSource supplies deterministic backlog values to observable gauge tests.
 type testOutboxMetricsSource struct {
 	pending int64
 	oldest  float64
 }
 
+// PendingStats returns the fixed backlog values configured in the test source.
 func (s testOutboxMetricsSource) PendingStats(context.Context) (int64, float64, error) {
 	return s.pending, s.oldest, nil
 }
 
+// TestKafkaMetricsRecordsApplicationMetrics checks that Kafka counters, duration histogram,
+// and Outbox backlog gauges are registered and collected with the expected measurements.
 func TestKafkaMetricsRecordsApplicationMetrics(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
