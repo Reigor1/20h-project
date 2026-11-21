@@ -14,39 +14,47 @@ const (
 	tasksPath = "/api/v1/tasks"
 )
 
+// fixtureSet stores the data required by the corresponding test scenario.
 type fixtureSet struct {
 	runID string
 	users []userFixture
 }
 
+// userFixture stores the data required by the corresponding test scenario.
 type userFixture struct {
 	ID      int
 	TaskIDs []int
 }
 
+// userResponse stores the data required by the corresponding test scenario.
 type userResponse struct {
 	ID int `json:"id"`
 }
 
+// taskResponse stores the data required by the corresponding test scenario.
 type taskResponse struct {
 	ID int `json:"id"`
 }
 
+// createUserRequest stores the data required by the corresponding test scenario.
 type createUserRequest struct {
 	FullName string `json:"full_name"`
 }
 
+// createTaskRequest stores the data required by the corresponding test scenario.
 type createTaskRequest struct {
 	Title        string `json:"title"`
 	AuthorUserID int    `json:"author_user_id"`
 }
 
+// newFixtureSet constructs the test client or fixture required by the scenario.
 func newFixtureSet() *fixtureSet {
 	return &fixtureSet{
 		runID: time.Now().UTC().Format("20060102T150405.000000000"),
 	}
 }
 
+// create supports setup, execution, or verification of the corresponding test scenario.
 func (f *fixtureSet) create(
 	ctx context.Context,
 	client *apiClient,
@@ -84,6 +92,7 @@ func (f *fixtureSet) create(
 	return nil
 }
 
+// createUser supports setup, execution, or verification of the corresponding test scenario.
 func (f *fixtureSet) createUser(
 	ctx context.Context,
 	client *apiClient,
@@ -134,6 +143,7 @@ func (f *fixtureSet) createUser(
 	}, nil
 }
 
+// createTask supports setup, execution, or verification of the corresponding test scenario.
 func (f *fixtureSet) createTask(
 	ctx context.Context,
 	client *apiClient,
@@ -189,6 +199,7 @@ func (f *fixtureSet) createTask(
 	return created.ID, nil
 }
 
+// cleanup supports setup, execution, or verification of the corresponding test scenario.
 func (f *fixtureSet) cleanup(
 	ctx context.Context,
 	client *apiClient,
@@ -221,6 +232,7 @@ func (f *fixtureSet) cleanup(
 	return errors.Join(cleanupErrors...)
 }
 
+// deleteFixture removes test data or schema created by the integration scenario.
 func deleteFixture(
 	ctx context.Context,
 	client *apiClient,
@@ -250,6 +262,7 @@ func deleteFixture(
 	)
 }
 
+// taskCount supports setup, execution, or verification of the corresponding test scenario.
 func (f *fixtureSet) taskCount() int {
 	count := 0
 
