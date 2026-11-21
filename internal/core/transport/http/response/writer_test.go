@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestNewResponseWriterStartsUninitialized checks the wrapper's initial status and write state.
 func TestNewResponseWriterStartsUninitialized(t *testing.T) {
 	response := httptest.NewRecorder()
 	writer := NewResponseWriter(response)
@@ -18,6 +19,7 @@ func TestNewResponseWriterStartsUninitialized(t *testing.T) {
 	}
 }
 
+// TestResponseWriterWriteHeaderStoresStatus verifies that the first status code is recorded.
 func TestResponseWriterWriteHeaderStoresStatus(t *testing.T) {
 	response := httptest.NewRecorder()
 	writer := NewResponseWriter(response)
@@ -32,6 +34,7 @@ func TestResponseWriterWriteHeaderStoresStatus(t *testing.T) {
 	}
 }
 
+// TestResponseWriterWriteBodyUsesImplicitOKStatus checks implicit HTTP 200 on the first body write.
 func TestResponseWriterWriteBodyUsesImplicitOKStatus(t *testing.T) {
 	response := httptest.NewRecorder()
 	writer := NewResponseWriter(response)
@@ -48,6 +51,7 @@ func TestResponseWriterWriteBodyUsesImplicitOKStatus(t *testing.T) {
 	}
 }
 
+// TestResponseWriterRepeatedWriteHeaderKeepsHTTPFirstStatus verifies HTTP's first-header-wins behavior.
 func TestResponseWriterRepeatedWriteHeaderKeepsHTTPFirstStatus(t *testing.T) {
 	response := httptest.NewRecorder()
 	writer := NewResponseWriter(response)
