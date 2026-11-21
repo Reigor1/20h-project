@@ -7,6 +7,7 @@ import (
 	core_http_middleware "github.com/Reigor1/20h-project/internal/core/transport/http/middleware"
 )
 
+// ApiVersion identifies a versioned API namespace such as v1 or v2.
 type ApiVersion string
 
 var (
@@ -17,11 +18,13 @@ var (
 // APIRouteInstrumenter wraps one registered API route with instrumentation.
 type APIRouteInstrumenter func(method, path string, handler http.Handler) http.Handler
 
+// registeredRoute retains route metadata alongside its middleware-wrapped handler.
 type registeredRoute struct {
 	route   Route
 	handler http.Handler
 }
 
+// APIVersionRouter registers endpoints for one API version and applies shared middleware.
 type APIVersionRouter struct {
 	*http.ServeMux
 	apiVersion ApiVersion
@@ -29,6 +32,7 @@ type APIVersionRouter struct {
 	routes     []registeredRoute
 }
 
+// NewAPIVersionRouter creates a ServeMux for one API version with optional shared middleware.
 func NewAPIVersionRouter(
 	apiVersion ApiVersion,
 	middleware ...core_http_middleware.Middleware,
@@ -40,6 +44,7 @@ func NewAPIVersionRouter(
 	}
 }
 
+// RegisterRouts registers method-aware routes and retains their metadata for instrumentation.
 func (r *APIVersionRouter) RegisterRouts(routes ...Route) {
 	for _, route := range routes {
 		pattern := fmt.Sprintf("%s %s", route.Method, route.Path)
@@ -53,6 +58,8 @@ func (r *APIVersionRouter) RegisterRouts(routes ...Route) {
 	}
 }
 
+// WithMiddleware wraps the versioned router and optionally instruments each registered route
+// using its method and path template. Direct ServeMux registrations remain reachable.
 func (r *APIVersionRouter) WithMiddleware(instrumenters ...APIRouteInstrumenter) http.Handler {
 	var handler http.Handler = r.ServeMux
 
