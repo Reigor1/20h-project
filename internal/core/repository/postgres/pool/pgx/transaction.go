@@ -7,10 +7,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// pgxTransaction adapts pgx.Tx to the application's database transaction interface.
 type pgxTransaction struct {
 	tx pgx.Tx
 }
 
+// Query executes a transaction-scoped query and maps pgx errors to repository errors.
 func (tx pgxTransaction) Query(
 	ctx context.Context,
 	sql string,
@@ -24,6 +26,7 @@ func (tx pgxTransaction) Query(
 	return pgxRows{rows}, nil
 }
 
+// QueryRow executes a transaction-scoped single-row query.
 func (tx pgxTransaction) QueryRow(
 	ctx context.Context,
 	sql string,
@@ -34,6 +37,7 @@ func (tx pgxTransaction) QueryRow(
 	}
 }
 
+// Exec executes a transaction-scoped command and adapts its command tag.
 func (tx pgxTransaction) Exec(
 	ctx context.Context,
 	sql string,
@@ -47,10 +51,12 @@ func (tx pgxTransaction) Exec(
 	return pgxCommandTag{tag}, nil
 }
 
+// Commit atomically commits the transaction and maps any pgx error.
 func (tx pgxTransaction) Commit(ctx context.Context) error {
 	return mapErrors(tx.tx.Commit(ctx))
 }
 
+// Rollback aborts the transaction and maps any pgx error.
 func (tx pgxTransaction) Rollback(ctx context.Context) error {
 	return mapErrors(tx.tx.Rollback(ctx))
 }
