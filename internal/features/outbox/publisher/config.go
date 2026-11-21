@@ -8,6 +8,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
+// Config controls the Outbox Publisher topic, polling, batching, leases, retries, and shutdown.
 type Config struct {
 	Topic          string        `envconfig:"TOPIC" default:"task-events"`
 	PollInterval   time.Duration `envconfig:"POLL_INTERVAL" default:"1s"`
@@ -18,6 +19,7 @@ type Config struct {
 	ShutdownTimeout time.Duration `envconfig:"SHUTDOWN_TIMEOUT" default:"30s"`
 }
 
+// NewConfig loads Outbox Publisher settings from the environment and validates them.
 func NewConfig() (Config, error) {
 	var config Config
 
@@ -32,6 +34,8 @@ func NewConfig() (Config, error) {
 	return config, nil
 }
 
+// Validate checks the topic and requires positive polling, batch, lease, retry,
+// and shutdown settings with a maximum retry delay no shorter than the base delay.
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.Topic) == "" {
 		return fmt.Errorf("Outbox Publisher topic must not be empty")
