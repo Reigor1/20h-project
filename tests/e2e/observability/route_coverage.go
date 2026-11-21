@@ -8,22 +8,26 @@ import (
 	"strconv"
 )
 
+// routeCoverageUserResponse stores the data required by the corresponding test scenario.
 type routeCoverageUserResponse struct {
 	ID       int    `json:"id"`
 	FullName string `json:"full_name"`
 }
 
+// routeCoverageTaskResponse stores the data required by the corresponding test scenario.
 type routeCoverageTaskResponse struct {
 	ID        int    `json:"id"`
 	Title     string `json:"title"`
 	Completed bool   `json:"completed"`
 }
 
+// routeCoverageStatisticsResponse stores the data required by the corresponding test scenario.
 type routeCoverageStatisticsResponse struct {
 	TasksCreated   int `json:"tasks_created"`
 	TasksCompleted int `json:"tasks_completed"`
 }
 
+// runRouteCoverage executes the corresponding observability test workflow.
 func runRouteCoverage(
 	ctx context.Context,
 	client *apiClient,
@@ -51,6 +55,7 @@ func runRouteCoverage(
 	return nil
 }
 
+// coverUsersRoutes exercises the corresponding API route group for route coverage.
 func coverUsersRoutes(
 	ctx context.Context,
 	client *apiClient,
@@ -179,6 +184,7 @@ func coverUsersRoutes(
 	return nil
 }
 
+// coverTasksRoutes exercises the corresponding API route group for route coverage.
 func coverTasksRoutes(
 	ctx context.Context,
 	client *apiClient,
@@ -321,6 +327,7 @@ func coverTasksRoutes(
 	return nil
 }
 
+// coverStatisticsRoutes exercises the corresponding API route group for route coverage.
 func coverStatisticsRoutes(
 	ctx context.Context,
 	client *apiClient,
@@ -373,6 +380,7 @@ func coverStatisticsRoutes(
 	return nil
 }
 
+// doRouteRequest sends an HTTP request as part of the observability test scenario.
 func doRouteRequest(
 	ctx context.Context,
 	client *apiClient,
