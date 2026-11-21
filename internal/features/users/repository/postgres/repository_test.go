@@ -37,6 +37,7 @@ type repositoryTestPool struct {
 	gotContext   context.Context
 }
 
+// newRepositoryTestPool creates a configured test fixture for repository tests.
 func newRepositoryTestPool(t *testing.T) *repositoryTestPool {
 	t.Helper()
 
@@ -46,6 +47,7 @@ func newRepositoryTestPool(t *testing.T) *repositoryTestPool {
 	}
 }
 
+// Query implements the corresponding database pool or transaction operation for tests.
 func (p *repositoryTestPool) Query(
 	ctx context.Context,
 	sql string,
@@ -62,6 +64,7 @@ func (p *repositoryTestPool) Query(
 	return p.queryResult, p.queryError
 }
 
+// QueryRow implements the corresponding database pool or transaction operation for tests.
 func (p *repositoryTestPool) QueryRow(
 	ctx context.Context,
 	sql string,
@@ -81,6 +84,7 @@ func (p *repositoryTestPool) QueryRow(
 	return p.rowResult
 }
 
+// Exec implements the corresponding database pool or transaction operation for tests.
 func (p *repositoryTestPool) Exec(
 	ctx context.Context,
 	sql string,
@@ -100,8 +104,10 @@ func (p *repositoryTestPool) Exec(
 	return p.execResult, p.execError
 }
 
+// Close records or simulates resource cleanup for repository tests.
 func (*repositoryTestPool) Close() {}
 
+// OpTimeout implements a test helper for the PostgreSQL repository contract.
 func (p *repositoryTestPool) OpTimeout() time.Duration {
 	return p.operationTimeout
 }
@@ -112,6 +118,7 @@ type repositoryTestRow struct {
 	scans  int
 }
 
+// Scan simulates scanning database values into repository destinations.
 func (r *repositoryTestRow) Scan(dest ...any) error {
 	r.scans++
 	if r.err != nil {
@@ -143,6 +150,7 @@ type repositoryTestRows struct {
 	closeCalls int
 }
 
+// Next exposes the configured row iteration state to the repository under test.
 func (r *repositoryTestRows) Next() bool {
 	if r.current >= len(r.rows) {
 		return false
@@ -151,6 +159,7 @@ func (r *repositoryTestRows) Next() bool {
 	return true
 }
 
+// Scan simulates scanning database values into repository destinations.
 func (r *repositoryTestRows) Scan(dest ...any) error {
 	if r.scanError != nil {
 		return r.scanError
@@ -159,10 +168,12 @@ func (r *repositoryTestRows) Scan(dest ...any) error {
 	return (&repositoryTestRow{values: values}).Scan(dest...)
 }
 
+// Err exposes the configured row iteration state to the repository under test.
 func (r *repositoryTestRows) Err() error {
 	return r.rowsError
 }
 
+// Close records or simulates resource cleanup for repository tests.
 func (r *repositoryTestRows) Close() {
 	r.closeCalls++
 }
@@ -171,10 +182,12 @@ type repositoryTestCommandTag struct {
 	rowsAffected int64
 }
 
+// RowsAffected simulates database row iteration and resource cleanup.
 func (tag repositoryTestCommandTag) RowsAffected() int64 {
 	return tag.rowsAffected
 }
 
+// TestNewUsersRepositoryStoresPool verifies the repository behavior and failure handling represented by its test cases.
 func TestNewUsersRepositoryStoresPool(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 
@@ -185,6 +198,7 @@ func TestNewUsersRepositoryStoresPool(t *testing.T) {
 	}
 }
 
+// TestUserDomainsFromModels verifies the repository behavior and failure handling represented by its test cases.
 func TestUserDomainsFromModels(t *testing.T) {
 	firstPhoneNumber := "+1234567890"
 	secondPhoneNumber := "+19876543210"
@@ -250,6 +264,7 @@ func TestUserDomainsFromModels(t *testing.T) {
 	}
 }
 
+// TestCreateUser verifies the repository behavior and failure handling represented by its test cases.
 func TestCreateUser(t *testing.T) {
 	phoneNumber := "+1234567890"
 	inputUser := domain.NewUserUninitialized("Ada Lovelace", &phoneNumber)
@@ -282,6 +297,7 @@ func TestCreateUser(t *testing.T) {
 	}
 }
 
+// TestCreateUserReturnsScanError verifies the repository behavior and failure handling represented by its test cases.
 func TestCreateUserReturnsScanError(t *testing.T) {
 	scanError := errors.New("scan failed")
 	row := &repositoryTestRow{err: scanError}
@@ -300,6 +316,7 @@ func TestCreateUserReturnsScanError(t *testing.T) {
 	}
 }
 
+// TestGetUser verifies the repository behavior and failure handling represented by its test cases.
 func TestGetUser(t *testing.T) {
 	phoneNumber := "+1234567890"
 	row := &repositoryTestRow{
@@ -328,6 +345,7 @@ func TestGetUser(t *testing.T) {
 	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
 }
 
+// TestGetUserTranslatesNoRowsToNotFound verifies the repository behavior and failure handling represented by its test cases.
 func TestGetUserTranslatesNoRowsToNotFound(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrNoRows}
 	pool := newRepositoryTestPool(t)
@@ -344,6 +362,7 @@ func TestGetUserTranslatesNoRowsToNotFound(t *testing.T) {
 	}
 }
 
+// TestGetUserReturnsScanError verifies the repository behavior and failure handling represented by its test cases.
 func TestGetUserReturnsScanError(t *testing.T) {
 	scanError := errors.New("database decoding failed")
 	row := &repositoryTestRow{err: scanError}
@@ -358,6 +377,7 @@ func TestGetUserReturnsScanError(t *testing.T) {
 	}
 }
 
+// TestGetUsers verifies the repository behavior and failure handling represented by its test cases.
 func TestGetUsers(t *testing.T) {
 	firstPhoneNumber := "+1234567890"
 	rows := &repositoryTestRows{
@@ -397,6 +417,7 @@ func TestGetUsers(t *testing.T) {
 	}
 }
 
+// TestGetUsersReturnsEmptySliceForNoRows verifies the repository behavior and failure handling represented by its test cases.
 func TestGetUsersReturnsEmptySliceForNoRows(t *testing.T) {
 	rows := &repositoryTestRows{}
 	pool := newRepositoryTestPool(t)
@@ -419,6 +440,7 @@ func TestGetUsersReturnsEmptySliceForNoRows(t *testing.T) {
 	}
 }
 
+// TestGetUsersReturnsQueryError verifies the repository behavior and failure handling represented by its test cases.
 func TestGetUsersReturnsQueryError(t *testing.T) {
 	queryError := errors.New("query failed")
 	pool := newRepositoryTestPool(t)
@@ -435,6 +457,7 @@ func TestGetUsersReturnsQueryError(t *testing.T) {
 	}
 }
 
+// TestGetUsersReturnsScanErrorAndClosesRows verifies the repository behavior and failure handling represented by its test cases.
 func TestGetUsersReturnsScanErrorAndClosesRows(t *testing.T) {
 	scanError := errors.New("row scan failed")
 	rows := &repositoryTestRows{
@@ -455,6 +478,7 @@ func TestGetUsersReturnsScanErrorAndClosesRows(t *testing.T) {
 	}
 }
 
+// TestGetUsersReturnsRowsIterationErrorAndClosesRows verifies the repository behavior and failure handling represented by its test cases.
 func TestGetUsersReturnsRowsIterationErrorAndClosesRows(t *testing.T) {
 	iterationError := errors.New("iteration failed")
 	rows := &repositoryTestRows{rowsError: iterationError}
@@ -472,6 +496,7 @@ func TestGetUsersReturnsRowsIterationErrorAndClosesRows(t *testing.T) {
 	}
 }
 
+// TestPatchUser verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchUser(t *testing.T) {
 	phoneNumber := "+1234567890"
 	inputUser := domain.NewUser(42, 3, "Grace Hopper", &phoneNumber)
@@ -502,6 +527,7 @@ func TestPatchUser(t *testing.T) {
 	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
 }
 
+// TestPatchUserTranslatesNoRowsToConflict verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchUserTranslatesNoRowsToConflict(t *testing.T) {
 	row := &repositoryTestRow{err: core_postgres_pool.ErrNoRows}
 	pool := newRepositoryTestPool(t)
@@ -519,6 +545,7 @@ func TestPatchUserTranslatesNoRowsToConflict(t *testing.T) {
 	}
 }
 
+// TestPatchUserReturnsScanError verifies the repository behavior and failure handling represented by its test cases.
 func TestPatchUserReturnsScanError(t *testing.T) {
 	scanError := errors.New("return row decoding failed")
 	row := &repositoryTestRow{err: scanError}
@@ -534,6 +561,7 @@ func TestPatchUserReturnsScanError(t *testing.T) {
 	}
 }
 
+// TestDeleteUser verifies the repository behavior and failure handling represented by its test cases.
 func TestDeleteUser(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 	pool.execResult = repositoryTestCommandTag{rowsAffected: 1}
@@ -554,6 +582,7 @@ func TestDeleteUser(t *testing.T) {
 	testutil.AssertRepositoryContext(t, pool.gotContext, ctx)
 }
 
+// TestDeleteUserReturnsExecutionError verifies the repository behavior and failure handling represented by its test cases.
 func TestDeleteUserReturnsExecutionError(t *testing.T) {
 	executionError := errors.New("delete failed")
 	pool := newRepositoryTestPool(t)
@@ -567,6 +596,7 @@ func TestDeleteUserReturnsExecutionError(t *testing.T) {
 	}
 }
 
+// TestDeleteUserReturnsNotFoundWhenNoRowsAffected verifies the repository behavior and failure handling represented by its test cases.
 func TestDeleteUserReturnsNotFoundWhenNoRowsAffected(t *testing.T) {
 	pool := newRepositoryTestPool(t)
 	pool.execResult = repositoryTestCommandTag{rowsAffected: 0}
