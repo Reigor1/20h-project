@@ -21,6 +21,7 @@ import (
 
 const repositoryUpdateTimeout = 5 * time.Second
 
+// OutboxRepository defines the lease-based persistence operations used by Publisher.
 type OutboxRepository interface {
 	ClaimPending(
 		ctx context.Context,
@@ -43,6 +44,7 @@ type OutboxRepository interface {
 	) error
 }
 
+// EventProducer publishes a batch and returns one delivery result per message.
 type EventProducer interface {
 	PublishBatch(
 		ctx context.Context,
@@ -56,6 +58,7 @@ type Instrumentation struct {
 	Tracer  trace.Tracer
 }
 
+// Publisher claims pending Outbox events, publishes them to Kafka, and records delivery outcomes.
 type Publisher struct {
 	config     Config
 	repository OutboxRepository
@@ -65,6 +68,7 @@ type Publisher struct {
 	tracer     trace.Tracer
 }
 
+// NewPublisher validates dependencies and creates a Publisher with optional telemetry instrumentation.
 func NewPublisher(
 	config Config,
 	repository OutboxRepository,
@@ -102,6 +106,8 @@ func NewPublisher(
 	return publisher, nil
 }
 
+// Run polls the Outbox, drains available batches without unnecessary polling delays,
+// and gives an active batch a bounded grace period when shutdown is requested.
 func (p *Publisher) Run(ctx context.Context) error {
 	ticker := time.NewTicker(p.config.PollInterval)
 	defer ticker.Stop()
@@ -170,6 +176,8 @@ func (p *Publisher) Run(ctx context.Context) error {
 	}
 }
 
+// publishBatch claims a leased batch, propagates trace context to Kafka, publishes records,
+// and marks each event published or schedules a retry according to its delivery result.
 func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 	events, err := p.repository.ClaimPending(
 		ctx,
@@ -388,6 +396,7 @@ func (p *Publisher) publishBatch(ctx context.Context) (int, error) {
 	return len(events), nil
 }
 
+// recordPublishSpanError records an error and marks the producer span as failed when present.
 func recordPublishSpanError(span trace.Span, err error) {
 	if span == nil || err == nil {
 		return
@@ -396,6 +405,7 @@ func recordPublishSpanError(span trace.Span, err error) {
 	span.SetStatus(codes.Error, err.Error())
 }
 
+// retryDelay calculates capped exponential backoff for the requested publish attempt.
 func (p *Publisher) retryDelay(attempt int) time.Duration {
 	delay := p.config.RetryBaseDelay
 
