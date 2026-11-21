@@ -16,6 +16,8 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
+// TestOpenTelemetryExportErrorsAreLogged verifies that failed OTLP trace and metric exports
+// are forwarded to the application's error logger.
 func TestOpenTelemetryExportErrorsAreLogged(t *testing.T) {
 	originalErrorHandler := otel.GetErrorHandler()
 	t.Cleanup(func() {
