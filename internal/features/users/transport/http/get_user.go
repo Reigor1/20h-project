@@ -8,6 +8,7 @@ import (
 	core_http_response "github.com/Reigor1/20h-project/internal/core/transport/http/response"
 )
 
+// GetUserResponse is the JSON response returned by the single-user endpoint.
 type GetUserResponse UserDTOResponse
 
 // GetUser      godoc
@@ -21,6 +22,7 @@ type GetUserResponse UserDTOResponse
 // @Failure     404 {object} core_http_response.ErrorResponse "User not found"
 // @Failure     500 {object} core_http_response.ErrorResponse "Internal server error"
 // @Router      /users/{id} [get]
+// GetUser parses the user ID, retrieves the user through the service, and returns HTTP 200.
 func (h *UsersHTTPHandler) GetUser(rw http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := core_logger.FromContext(ctx)
