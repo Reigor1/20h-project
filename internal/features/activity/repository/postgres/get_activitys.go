@@ -7,6 +7,7 @@ import (
 	activity_service "github.com/Reigor1/20h-project/internal/features/activity/service"
 )
 
+// GetActivities returns a paginated Activity Log ordered by the repository's query ordering.
 func (r *ActivityRepository) GetActivities(
 	ctx context.Context,
 	taskID int,
