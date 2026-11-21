@@ -10,6 +10,8 @@ import (
 	core_postgres_pool "github.com/Reigor1/20h-project/internal/core/repository/postgres/pool"
 )
 
+// GetUser selects one user by ID, maps it to the domain model, and translates
+// a missing row into the shared not-found error.
 func (r *UsersRepository) GetUser(
 	ctx context.Context,
 	id int,
