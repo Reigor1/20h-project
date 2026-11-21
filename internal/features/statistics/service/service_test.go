@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
+// statisticsRepositoryStub captures StatisticsRepository filters and returns configured task data or errors.
 type statisticsRepositoryStub struct {
 	t *testing.T
 
@@ -25,12 +26,14 @@ type statisticsRepositoryStub struct {
 	gotTo     *time.Time
 }
 
+// newStatisticsRepositoryStub creates the repository fake used by Statistics service tests.
 func newStatisticsRepositoryStub(t *testing.T) *statisticsRepositoryStub {
 	t.Helper()
 
 	return &statisticsRepositoryStub{t: t}
 }
 
+// GetTasks records the requested filters and returns the stub's configured result.
 func (r *statisticsRepositoryStub) GetTasks(
 	_ context.Context,
 	userID *int,
@@ -48,6 +51,8 @@ func (r *statisticsRepositoryStub) GetTasks(
 	return r.tasks, r.err
 }
 
+// TestGetStatisticsCalculatesAggregatesAndForwardsFilters verifies task counts, completion rate,
+// average completion time, and forwarding of owner/date filters.
 func TestGetStatisticsCalculatesAggregatesAndForwardsFilters(t *testing.T) {
 	userID := 27
 	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
@@ -115,6 +120,7 @@ func TestGetStatisticsCalculatesAggregatesAndForwardsFilters(t *testing.T) {
 	}
 }
 
+// TestGetStatisticsReturnsZeroValuesForNoTasks checks the empty-dataset result and absent filters.
 func TestGetStatisticsReturnsZeroValuesForNoTasks(t *testing.T) {
 	repository := newStatisticsRepositoryStub(t)
 	repository.tasks = []domain.Task{}
@@ -139,6 +145,8 @@ func TestGetStatisticsReturnsZeroValuesForNoTasks(t *testing.T) {
 	}
 }
 
+// TestGetStatisticsOmitsAverageWhenCompletedDurationIsZero verifies zero-duration tasks do not
+// produce a misleading average completion time.
 func TestGetStatisticsOmitsAverageWhenCompletedDurationIsZero(t *testing.T) {
 	createdAt := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
 	completedAt := createdAt
@@ -159,6 +167,7 @@ func TestGetStatisticsOmitsAverageWhenCompletedDurationIsZero(t *testing.T) {
 	}
 }
 
+// TestGetStatisticsRejectsInvalidDateRange verifies equal or reversed bounds fail before repository access.
 func TestGetStatisticsRejectsInvalidDateRange(t *testing.T) {
 	from := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
@@ -195,6 +204,7 @@ func TestGetStatisticsRejectsInvalidDateRange(t *testing.T) {
 	}
 }
 
+// TestGetStatisticsReturnsRepositoryError checks that persistence failures are propagated.
 func TestGetStatisticsReturnsRepositoryError(t *testing.T) {
 	repositoryError := errors.New("database unavailable")
 	repository := newStatisticsRepositoryStub(t)
@@ -214,6 +224,7 @@ func TestGetStatisticsReturnsRepositoryError(t *testing.T) {
 	}
 }
 
+// newStatisticsServiceForTest creates a Statistics service with a no-op tracer and no cache.
 func newStatisticsServiceForTest(repository StatisticsRepository) *StatisticsService {
 	return NewStatisticsService(repository, nil, noop.NewTracerProvider())
 }
