@@ -87,7 +87,7 @@ func NewKafkaMetrics(
 		pendingGauge, err := meter.Int64ObservableGauge(
 			"outbox_pending_events",
 			metric.WithDescription("Outbox rows that have not been marked as published."),
-			)
+		)
 		if err != nil {
 			return nil, fmt.Errorf("create Outbox pending gauge: %w", err)
 		}

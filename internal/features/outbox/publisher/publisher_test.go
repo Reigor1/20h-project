@@ -67,7 +67,6 @@ func TestRetryDelay(t *testing.T) {
 	}
 }
 
-
 // shutdownTestRepository blocks Outbox operations to exercise publisher shutdown timing.
 type shutdownTestRepository struct {
 	entered chan struct{}
@@ -131,12 +130,12 @@ func TestRunWaitsForActiveBatchAfterShutdownSignal(t *testing.T) {
 
 	publisher, err := NewPublisher(
 		Config{
-			Topic:          "task-events",
-			PollInterval:   time.Millisecond,
-			BatchSize:      10,
-			LeaseDuration:  time.Minute,
-			RetryBaseDelay: time.Second,
-			RetryMaxDelay:  time.Minute,
+			Topic:           "task-events",
+			PollInterval:    time.Millisecond,
+			BatchSize:       10,
+			LeaseDuration:   time.Minute,
+			RetryBaseDelay:  time.Second,
+			RetryMaxDelay:   time.Minute,
 			ShutdownTimeout: time.Second,
 		},
 		repository,

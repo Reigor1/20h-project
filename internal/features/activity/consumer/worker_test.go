@@ -126,9 +126,9 @@ func (p *fakeProducer) Publish(
 
 // fakeActivityService simulates Activity persistence, including retries and duplicate events.
 type fakeActivityService struct {
-	sequence  *[]string
-	errors    []error
-	duplicate bool
+	sequence           *[]string
+	errors             []error
+	duplicate          bool
 	calls              int
 	onRecord           func()
 	waitForContextDone bool
@@ -763,7 +763,6 @@ func TestProcessMessageStopsWhenPendingQueueIsFull(t *testing.T) {
 		t.Errorf("committed messages = %d, want 0", consumer.committed)
 	}
 }
-
 
 // TestRunCommitsCurrentMessageAfterShutdownSignal checks graceful shutdown completes an in-flight message.
 func TestRunCommitsCurrentMessageAfterShutdownSignal(t *testing.T) {

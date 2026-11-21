@@ -104,9 +104,9 @@ func run() (runErr error) {
 	// Shutdown it before closing the pool so the final metric collection
 	// can still read pgxpool.Stat().
 	var (
-		pool          *core_pgx_pool.Pool
-		cache         core_redis.Cache
-		kafkaProducer *kafka_producer.Producer
+		pool            *core_pgx_pool.Pool
+		cache           core_redis.Cache
+		kafkaProducer   *kafka_producer.Producer
 		publisherDone   chan error
 		publisherCancel context.CancelFunc
 		publisherConfig outbox_publisher.Config

@@ -7,12 +7,12 @@ const globalStatisticsCacheKey = "statistics:global"
 
 // StatisticsCache adapts the shared byte-oriented Redis cache to the Statistics domain model.
 type StatisticsCache struct {
-    cache core_redis.Cache
+	cache core_redis.Cache
 }
 
 // NewStatisticsCache creates the statistics cache adapter over the shared Redis contract.
 func NewStatisticsCache(cache core_redis.Cache) *StatisticsCache {
-    return &StatisticsCache{
-        cache: cache,
-    }
+	return &StatisticsCache{
+		cache: cache,
+	}
 }

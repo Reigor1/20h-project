@@ -50,10 +50,10 @@ func (s *StatisticsService) GetStatistics(
 	statistics := calcStatistics(tasks)
 
 	if cacheable && s.cache != nil {
-        if err := s.cache.Set(ctx, statistics, globalStatisticsCacheTTL); err != nil {
-            span.RecordError(fmt.Errorf("set statistics cache: %w", err))
-        }
-    }
+		if err := s.cache.Set(ctx, statistics, globalStatisticsCacheTTL); err != nil {
+			span.RecordError(fmt.Errorf("set statistics cache: %w", err))
+		}
+	}
 
 	return statistics, nil
 }

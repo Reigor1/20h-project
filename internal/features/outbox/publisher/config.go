@@ -10,12 +10,12 @@ import (
 
 // Config controls the Outbox Publisher topic, polling, batching, leases, retries, and shutdown.
 type Config struct {
-	Topic          string        `envconfig:"TOPIC" default:"task-events"`
-	PollInterval   time.Duration `envconfig:"POLL_INTERVAL" default:"1s"`
-	BatchSize      int           `envconfig:"BATCH_SIZE" default:"100"`
-	LeaseDuration  time.Duration `envconfig:"LEASE_DURATION" default:"2m"`
-	RetryBaseDelay time.Duration `envconfig:"RETRY_BASE_DELAY" default:"1s"`
-	RetryMaxDelay  time.Duration `envconfig:"RETRY_MAX_DELAY" default:"5m"`
+	Topic           string        `envconfig:"TOPIC" default:"task-events"`
+	PollInterval    time.Duration `envconfig:"POLL_INTERVAL" default:"1s"`
+	BatchSize       int           `envconfig:"BATCH_SIZE" default:"100"`
+	LeaseDuration   time.Duration `envconfig:"LEASE_DURATION" default:"2m"`
+	RetryBaseDelay  time.Duration `envconfig:"RETRY_BASE_DELAY" default:"1s"`
+	RetryMaxDelay   time.Duration `envconfig:"RETRY_MAX_DELAY" default:"5m"`
 	ShutdownTimeout time.Duration `envconfig:"SHUTDOWN_TIMEOUT" default:"30s"`
 }
 

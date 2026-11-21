@@ -18,7 +18,7 @@ func (s *TasksService) GetTasks(
 ) ([]domain.Task, error) {
 	ctx, span := s.tracer.Start(ctx, "tasks.list")
 	defer span.End()
-	
+
 	if limit != nil && *limit < 0 {
 		core_observability.MarkSpanError(span, "tasks.list")
 		return nil, fmt.Errorf(

@@ -8,14 +8,14 @@ import (
 // validConfig returns a Consumer configuration that satisfies all validation rules.
 func validConfig() Config {
 	return Config{
-		BootstrapServers:  "localhost:29092",
-		GroupID:           "activity-workers",
-		ClientID:          "activity-worker",
-		Topic:             "task-events",
-		DLQTopic:          "task-events.dlq",
-		AutoOffsetReset:   "earliest",
-		RetryBaseDelay:    time.Second,
-		RetryMaxDelay:     30 * time.Second,
+		BootstrapServers:   "localhost:29092",
+		GroupID:            "activity-workers",
+		ClientID:           "activity-worker",
+		Topic:              "task-events",
+		DLQTopic:           "task-events.dlq",
+		AutoOffsetReset:    "earliest",
+		RetryBaseDelay:     time.Second,
+		RetryMaxDelay:      30 * time.Second,
 		MaxPendingMessages: 1000,
 		ShutdownTimeout:    30 * time.Second,
 	}
