@@ -10,6 +10,7 @@ import (
 	"github.com/Reigor1/20h-project/internal/testutil"
 )
 
+// TestRouteWithMiddleware verifies that route-level middleware wraps the route handler.
 func TestRouteWithMiddleware(t *testing.T) {
 	events := []string{}
 	route := Route{
@@ -48,6 +49,7 @@ func TestRouteWithMiddleware(t *testing.T) {
 	}
 }
 
+// TestRouteWithMiddlewareWithoutMiddleware checks that routes work unchanged without middleware.
 func TestRouteWithMiddlewareWithoutMiddleware(t *testing.T) {
 	called := false
 	route := Route{
