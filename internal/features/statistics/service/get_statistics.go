@@ -58,6 +58,7 @@ func (s *StatisticsService) GetStatistics(
 	return statistics, nil
 }
 
+// calcStatistics derives aggregate task counts and completion-time statistics from task records.
 func calcStatistics(tasks []domain.Task) domain.Statistics {
 	if len(tasks) == 0 {
 		return domain.NewStatistics(0, 0, nil, nil)
