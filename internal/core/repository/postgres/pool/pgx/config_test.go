@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TestNewConfigReadsEnvironment verifies that PostgreSQL settings are loaded from POSTGRES_* variables.
 func TestNewConfigReadsEnvironment(t *testing.T) {
 	setValidPostgresEnvironment(t)
 
@@ -34,6 +35,7 @@ func TestNewConfigReadsEnvironment(t *testing.T) {
 	}
 }
 
+// TestNewConfigUsesDefaultPortWhenPortIsNotSet checks the default PostgreSQL port.
 func TestNewConfigUsesDefaultPortWhenPortIsNotSet(t *testing.T) {
 	setValidPostgresEnvironment(t)
 	unsetEnvironmentVariable(t, "POSTGRES_PORT")
@@ -47,6 +49,7 @@ func TestNewConfigUsesDefaultPortWhenPortIsNotSet(t *testing.T) {
 	}
 }
 
+// TestNewConfigRequiresEachMandatoryEnvironmentVariable verifies every required connection setting.
 func TestNewConfigRequiresEachMandatoryEnvironmentVariable(t *testing.T) {
 	mandatoryVariables := []string{
 		"POSTGRES_HOST",
@@ -68,6 +71,7 @@ func TestNewConfigRequiresEachMandatoryEnvironmentVariable(t *testing.T) {
 	}
 }
 
+// TestNewConfigMustReturnsConfiguration checks the panic-on-error constructor's successful path.
 func TestNewConfigMustReturnsConfiguration(t *testing.T) {
 	setValidPostgresEnvironment(t)
 
@@ -77,6 +81,7 @@ func TestNewConfigMustReturnsConfiguration(t *testing.T) {
 	}
 }
 
+// TestNewConfigMustPanicsWhenConfigurationIsInvalid verifies failure behavior for invalid settings.
 func TestNewConfigMustPanicsWhenConfigurationIsInvalid(t *testing.T) {
 	setValidPostgresEnvironment(t)
 	t.Setenv("POSTGRES_TIMEOUT", "not-a-duration")
@@ -90,6 +95,7 @@ func TestNewConfigMustPanicsWhenConfigurationIsInvalid(t *testing.T) {
 	NewConfigMust()
 }
 
+// setValidPostgresEnvironment configures a complete PostgreSQL environment for a test.
 func setValidPostgresEnvironment(t *testing.T) {
 	t.Helper()
 
@@ -101,6 +107,7 @@ func setValidPostgresEnvironment(t *testing.T) {
 	t.Setenv("POSTGRES_TIMEOUT", "5s")
 }
 
+// unsetEnvironmentVariable removes an environment variable for the duration of a test.
 func unsetEnvironmentVariable(t *testing.T, key string) {
 	t.Helper()
 
