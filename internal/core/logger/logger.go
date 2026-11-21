@@ -18,6 +18,7 @@ type loggerContextKey struct{}
 
 var key = loggerContextKey{}
 
+// ToContext stores the Logger in a context so downstream code can retrieve it.
 func ToContext(ctx context.Context, log *Logger) context.Context {
 	return context.WithValue(
 		ctx,
@@ -33,6 +34,7 @@ type loggerFileState struct {
 
 // TODO: add Logger interface :)
 
+// Logger wraps zap.Logger and shares file lifecycle state between derived loggers.
 type Logger struct {
 	*zap.Logger
 	fileState *loggerFileState
@@ -40,6 +42,8 @@ type Logger struct {
 	file *os.File
 }
 
+// FromContext retrieves the Logger from context and enriches it with trace and span IDs
+// when the context contains a valid OpenTelemetry span.
 func FromContext(ctx context.Context) *Logger {
 	log, ok := ctx.Value(key).(*Logger)
 	if !ok {
@@ -57,6 +61,7 @@ func FromContext(ctx context.Context) *Logger {
 	)
 }
 
+// NewLogger creates a zap logger that writes console-encoded entries to stdout and a timestamped file.
 func NewLogger(config Config) (*Logger, error) {
 	zapLvl := zap.NewAtomicLevel()
 	if err := zapLvl.UnmarshalText([]byte(config.Level)); err != nil {
@@ -97,6 +102,7 @@ func NewLogger(config Config) (*Logger, error) {
 	}, nil
 }
 
+// With returns a logger enriched with fields while sharing the original output file lifecycle.
 func (l *Logger) With(field ...zap.Field) *Logger {
 	return &Logger{
 		Logger:    l.Logger.With(field...),
@@ -105,6 +111,7 @@ func (l *Logger) With(field ...zap.Field) *Logger {
 	}
 }
 
+// Close syncs and closes the log file once, even when called through derived loggers.
 func (l *Logger) Close() error {
 	if l == nil || l.file == nil {
 		return nil
