@@ -10,12 +10,14 @@ import (
 	"time"
 )
 
+// loadProfile stores the data required by the corresponding test scenario.
 type loadProfile struct {
 	name          string
 	workerStages  []int
 	stageDuration time.Duration
 }
 
+// loadTestReport stores the data required by the corresponding test scenario.
 type loadTestReport struct {
 	StartedAt           time.Time         `json:"started_at"`
 	FinishedAt          time.Time         `json:"finished_at"`
@@ -27,6 +29,7 @@ type loadTestReport struct {
 	Stages              []loadStageReport `json:"stages"`
 }
 
+// runLoadTest executes the corresponding observability test workflow.
 func runLoadTest(
 	ctx context.Context,
 	client *apiClient,
@@ -82,6 +85,7 @@ func runLoadTest(
 	return nil
 }
 
+// loadProfiles supports setup, execution, or verification of the corresponding test scenario.
 func loadProfiles(config Config) ([]loadProfile, error) {
 	rampUp := loadProfile{
 		name:          "ramp-up",
@@ -115,6 +119,7 @@ func loadProfiles(config Config) ([]loadProfile, error) {
 	}
 }
 
+// writeLoadTestReport supports setup, execution, or verification of the corresponding test scenario.
 func writeLoadTestReport(
 	directory string,
 	report loadTestReport,
