@@ -10,11 +10,13 @@ import (
 	"testing"
 )
 
+// userRequest models the JSON fields accepted by user creation and patch endpoints.
 type userRequest struct {
 	FullName    string  `json:"full_name"`
 	PhoneNumber *string `json:"phone_number,omitempty"`
 }
 
+// userResponse models the user representation returned by the API.
 type userResponse struct {
 	ID          int     `json:"id"`
 	Version     int     `json:"version"`
@@ -22,6 +24,7 @@ type userResponse struct {
 	PhoneNumber *string `json:"phone_number,omitempty"`
 }
 
+// testUsersAPI exercises user creation, retrieval, pagination, patching, and deletion over HTTP.
 func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 	api := apiClient{httpClient: client, baseURL: baseURL}
 	const usersPath = "/api/v1/users"
@@ -550,4 +553,5 @@ func testUsersAPI(t *testing.T, client *http.Client, baseURL string) {
 	})
 }
 
+// stringPointer creates an optional string value for API test payloads.
 func stringPointer(value string) *string { return &value }
